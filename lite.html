@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Voice Draft Pro - ダークモード & 自動改行</title>
+  <style>
+    :root {
+      --bg: #000000;
+      --surface: #121212;
+      --card: #1c1c1e;
+      --accent: #0a84ff;
+      /* インクブルー系のアクセント */
+      --danger: #ff453a;
+      --success: #32d74b;
+      --text: #ffffff;
+      --text-dim: #8e8e93;
+      --border: rgba(255, 255, 255, 0.1);
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    header {
+      padding: env(safe-area-inset-top, 1rem) 1rem 0.5rem;
+      text-align: center;
+      flex-shrink: 0;
+      background: linear-gradient(to bottom, var(--surface), var(--bg));
+    }
+
+    #current-clock {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    #current-date {
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      margin-top: 2px;
+    }
+
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 0.5rem 1rem;
+      gap: 0.8rem;
+      min-height: 0;
+    }
+
+    #status-bar {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      text-align: center;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .recording-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      transition: 0.3s;
+    }
+
+    .recording .recording-indicator {
+      background: var(--danger);
+      box-shadow: 0 0 8px var(--danger);
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.4;
+      }
+
+      100% {
+        opacity: 1;
+      }
+    }
+
+    .editor {
+      flex: 1;
+      position: relative;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    }
+
+    #transcript {
+      flex: 1;
+      font-size: 1.3rem;
+      line-height: 1.6;
+      outline: none;
+      word-break: break-word;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    #transcript:empty::before {
+      content: "マイクをタップして執筆開始...";
+      color: var(--text-dim);
+      opacity: 0.5;
+    }
+
+    .controls {
+      padding: 0.5rem 0 env(safe-area-inset-bottom, 1rem);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.2rem;
+    }
+
+    .main-action {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    #record-btn {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      border: none;
+      background: var(--surface);
+      color: white;
+      font-size: 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 0 1px var(--border), 0 4px 15px rgba(0, 0, 0, 0.3);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      cursor: pointer;
+    }
+
+    #record-btn.recording {
+      background: var(--danger);
+      transform: scale(1.15);
+      box-shadow: 0 0 20px rgba(255, 69, 58, 0.4);
+    }
+
+    #undo-btn {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 1.2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: 0.2s;
+    }
+
+    #undo-btn:active {
+      background: var(--border);
+      transform: scale(0.9);
+    }
+
+    .btn-bar {
+      display: flex;
+      width: 100%;
+      gap: 12px;
+    }
+
+    .btn {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: white;
+      padding: 14px 0;
+      border-radius: 16px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: 0.2s;
+    }
+
+    .btn:active {
+      background: var(--card);
+      transform: translateY(2px);
+    }
+
+    .btn i {
+      font-size: 1.2rem;
+    }
+
+    #char-count {
+      position: absolute;
+      bottom: 12px;
+      right: 18px;
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      background: rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(4px);
+      padding: 4px 10px;
+      border-radius: 10px;
+      pointer-events: none;
+    }
+
+    #toast {
+      position: fixed;
+      bottom: 120px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--accent);
+      color: white;
+      padding: 10px 20px;
+      border-radius: 25px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      opacity: 0;
+      transition: 0.3s;
+      pointer-events: none;
+      z-index: 9999;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div id="current-clock">00:00</div>
+    <div id="current-date">----/--/--</div>
+  </header>
+
+  <div class="main">
+    <div id="status-bar">
+      <div class="recording-indicator"></div>
+      <span id="status-text">Ready</span>
+    </div>
+
+    <div class="editor">
+      <div id="transcript" contenteditable="true" spellcheck="false" inputmode="text"></div>
+      <div id="char-count">0 文字</div>
+    </div>
+
+    <div class="controls">
+      <div class="main-action">
+        <button id="undo-btn" title="一歩戻る">↩️</button>
+        <button id="record-btn">🎙️</button>
+        <div style="width: 50px;"></div> <!-- レイアウト調整用 -->
+      </div>
+
+      <div class="btn-bar">
+        <button class="btn" id="save-btn"><span>💾</span><span>保存</span></button>
+        <button class="btn" id="copy-btn"><span>📋</span><span>コピー</span></button>
+        <button class="btn" id="clear-btn" style="color: var(--danger)"><span>🗑️</span><span>消去</span></button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script>
+    const transcriptDiv = document.getElementById('transcript');
+    const recordBtn = document.getElementById('record-btn');
+    const undoBtn = document.getElementById('undo-btn');
+    const statusText = document.getElementById('status-text');
+    const charCountArea = document.getElementById('char-count');
+
+    let recognition = null;
+    let isRecording = false;
+    let silenceTimer = null;
+    let history = []; // 確定文の履歴スタック
+
+    // 履歴の保存
+    function saveHistory() {
+      localStorage.setItem('vd_history', JSON.stringify(history));
+    }
+
+    // 履歴の復元
+    const savedHistory = localStorage.getItem('vd_history');
+    if (savedHistory) {
+      try {
+        history = JSON.parse(savedHistory);
+      } catch (e) {
+        console.error('Failed to parse history', e);
+        history = [];
+      }
+    }
+
+    function updateCharCount() {
+      const text = transcriptDiv.innerText || "";
+      charCountArea.textContent = text.length.toLocaleString() + ' 文字';
+    }
+
+    function tick() {
+      const now = new Date();
+      document.getElementById('current-clock').textContent =
+        now.getHours().toString().padStart(2, '0') + ':' +
+        now.getMinutes().toString().padStart(2, '0');
+      document.getElementById('current-date').textContent =
+        now.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' });
+    }
+    setInterval(tick, 1000); tick();
+
+    // 復元
+    const saved = localStorage.getItem('vd_draft');
+    if (saved) {
+      transcriptDiv.innerText = saved;
+      updateCharCount();
+    }
+
+    // 自動改行アシスト用
+    function resetSilenceTimer() {
+      clearTimeout(silenceTimer);
+      if (!isRecording) return;
+
+      silenceTimer = setTimeout(() => {
+        const text = transcriptDiv.innerText.trim();
+        if (text && !text.endsWith('\n')) {
+          let added = '';
+          // 文末が句点でない場合は追加し、改行を入れる
+          let lastChar = text.slice(-1);
+          if (!['。', '！', '？', '!', '?'].includes(lastChar)) {
+            added += '。';
+          }
+          added += '\n';
+          transcriptDiv.innerText += added;
+          history.push(added); // 改行分も履歴に積む
+          saveHistory();
+          save();
+          updateCharCount();
+          transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
+        }
+      }, 2000); // 2秒の沈黙
+    }
+
+    // 音声認識の初期化
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SR) {
+      recognition = new SR();
+      recognition.continuous = true;
+      recognition.interimResults = false;
+      recognition.lang = 'ja-JP';
+
+      recognition.onresult = (e) => {
+        let final = '';
+        for (let i = e.resultIndex; i < e.results.length; ++i) {
+          if (e.results[i].isFinal) {
+            final += e.results[i][0].transcript;
+          }
+        }
+        if (final) {
+          const processed = final.replace(/改行/g, '\n');
+          transcriptDiv.innerText += processed;
+          history.push(processed); // 履歴に追加
+          saveHistory();
+
+          save();
+          updateCharCount();
+          transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
+          resetSilenceTimer(); // 入力があったのでタイマーリセット
+        }
+      };
+
+      recognition.onstart = () => {
+        isRecording = true;
+        recordBtn.classList.add('recording');
+        statusText.textContent = 'Recording...';
+        document.body.classList.add('recording');
+        resetSilenceTimer();
+      };
+
+      recognition.onend = () => {
+        if (isRecording) {
+          try { recognition.start(); } catch (err) { console.error(err); }
+        } else {
+          recordBtn.classList.remove('recording');
+          statusText.textContent = 'Ready';
+          document.body.classList.remove('recording');
+          clearTimeout(silenceTimer);
+        }
+      };
+
+      recognition.onerror = (e) => {
+        console.error('Speech recognition error:', e.error);
+        if (e.error === 'not-allowed') {
+          alert('マイクの使用が許可されていません');
+          isRecording = false;
+        }
+      };
+    }
+
+    recordBtn.onclick = () => {
+      if (isRecording) {
+        isRecording = false;
+        recognition.stop();
+      } else {
+        if (recognition) {
+          recognition.start();
+        } else {
+          alert('このブラウザは音声認識に対応していません');
+        }
+      }
+    };
+
+    // 一歩戻るボタン (多段階UNDO対応 & 履歴永続化)
+    undoBtn.onclick = () => {
+      if (history.length > 0) {
+        const lastInput = history.pop();
+        const currentText = transcriptDiv.innerText;
+
+        if (currentText.endsWith(lastInput)) {
+          transcriptDiv.innerText = currentText.slice(0, -lastInput.length);
+          save();
+          saveHistory();
+          updateCharCount();
+          toast('取り消しました');
+        } else {
+          // テキストエリアを手動編集した場合などで文末が一致しない場合
+          // 整合性を保つため履歴を破棄していくか、警告を出す。
+          // ここではユーザーが混乱しないよう、文末が一致しない場合は履歴を一つスキップして次を探す
+          undoBtn.onclick();
+        }
+      } else {
+        toast('戻せる履歴がありません');
+      }
+    };
+
+    function save() {
+      localStorage.setItem('vd_draft', transcriptDiv.innerText);
+    }
+
+    function toast(m) {
+      const t = document.getElementById('toast');
+      t.textContent = m;
+      t.style.opacity = 1;
+      setTimeout(() => t.style.opacity = 0, 1500);
+    }
+
+    // 保存ボタン (File System Access API 対応)
+    document.getElementById('save-btn').onclick = async () => {
+      const text = transcriptDiv.innerText;
+      if (!text || text.trim() === "") return toast('保存する内容がありません');
+
+      const now = new Date();
+      const timestamp = now.getFullYear() +
+        (now.getMonth() + 1).toString().padStart(2, '0') +
+        now.getDate().toString().padStart(2, '0') + "_" +
+        now.getHours().toString().padStart(2, '0') +
+        now.getMinutes().toString().padStart(2, '0');
+
+      const defaultFilename = `VoiceDraft_${timestamp}.md`;
+
+      // File System Access API が使えるかチェック
+      if ('showSaveFilePicker' in window) {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: defaultFilename,
+            types: [{
+              description: 'Markdown File',
+              accept: { 'text/markdown': ['.md'] },
+            }],
+          });
+          const writable = await handle.createWritable();
+          await writable.write(text);
+          await writable.close();
+          toast('保存完了');
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            console.error(err);
+            toast('保存に失敗しました');
+          }
+        }
+      } else {
+        // フォールバック: 従来のダウンロード方式
+        const blob = new Blob([text], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = defaultFilename;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast('ダウンロードフォルダに保存しました');
+      }
+    };
+
+    // コピーボタン
+    document.getElementById('copy-btn').onclick = () => {
+      const text = transcriptDiv.innerText;
+      if (!text) return toast('コピーする内容がありません');
+      navigator.clipboard.writeText(text).then(() => {
+        toast('クリップボードにコピーしました');
+      });
+    };
+
+    // 消去ボタン
+    document.getElementById('clear-btn').onclick = () => {
+      if (confirm('すべての内容を消去しますか？')) {
+        transcriptDiv.innerText = '';
+        history = [];
+        save();
+        updateCharCount();
+        toast('消去しました');
+      }
+    };
+
+    transcriptDiv.oninput = () => {
+      save();
+      updateCharCount();
+    };
+  </script>
+</body>
+
+</html>
