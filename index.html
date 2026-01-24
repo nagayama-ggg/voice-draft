@@ -300,6 +300,22 @@
     let silenceTimer = null;
     let history = []; // 確定文の履歴スタック
 
+    // 履歴の保存
+    function saveHistory() {
+      localStorage.setItem('vd_history', JSON.stringify(history));
+    }
+
+    // 履歴の復元
+    const savedHistory = localStorage.getItem('vd_history');
+    if (savedHistory) {
+      try {
+        history = JSON.parse(savedHistory);
+      } catch (e) {
+        console.error('Failed to parse history', e);
+        history = [];
+      }
+    }
+
     function updateCharCount() {
       const text = transcriptDiv.innerText || "";
       charCountArea.textContent = text.length.toLocaleString() + ' 文字';
@@ -330,16 +346,19 @@
       silenceTimer = setTimeout(() => {
         const text = transcriptDiv.innerText.trim();
         if (text && !text.endsWith('\n')) {
+          let added = '';
           // 文末が句点でない場合は追加し、改行を入れる
           let lastChar = text.slice(-1);
           if (!['。', '！', '？', '!', '?'].includes(lastChar)) {
-            transcriptDiv.innerText += '。';
+            added += '。';
           }
-          transcriptDiv.innerText += '\n';
+          added += '\n';
+          transcriptDiv.innerText += added;
+          history.push(added); // 改行分も履歴に積む
+          saveHistory();
           save();
           updateCharCount();
           transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
-          history.push('\n'); // 履歴への追加は動作に合わせて調整
         }
       }, 2000); // 2秒の沈黙
     }
@@ -363,6 +382,7 @@
           const processed = final.replace(/改行/g, '\n');
           transcriptDiv.innerText += processed;
           history.push(processed); // 履歴に追加
+          saveHistory();
 
           save();
           updateCharCount();
@@ -412,16 +432,23 @@
       }
     };
 
-    // 一歩戻るボタン
+    // 一歩戻るボタン (多段階UNDO対応 & 履歴永続化)
     undoBtn.onclick = () => {
       if (history.length > 0) {
         const lastInput = history.pop();
         const currentText = transcriptDiv.innerText;
+
         if (currentText.endsWith(lastInput)) {
           transcriptDiv.innerText = currentText.slice(0, -lastInput.length);
           save();
+          saveHistory();
           updateCharCount();
-          toast('直前の入力を取り消しました');
+          toast('取り消しました');
+        } else {
+          // テキストエリアを手動編集した場合などで文末が一致しない場合
+          // 整合性を保つため履歴を破棄していくか、警告を出す。
+          // ここではユーザーが混乱しないよう、文末が一致しない場合は履歴を一つスキップして次を探す
+          undoBtn.onclick();
         }
       } else {
         toast('戻せる履歴がありません');
@@ -436,7 +463,7 @@
       const t = document.getElementById('toast');
       t.textContent = m;
       t.style.opacity = 1;
-      setTimeout(() => t.style.opacity = 0, 2000);
+      setTimeout(() => t.style.opacity = 0, 1500);
     }
 
     // 保存ボタン (File System Access API 対応)
