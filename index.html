@@ -258,12 +258,12 @@
   <header>
     <div id="current-clock">00:00</div>
     <div id="current-date">----/--/--</div>
-    <div id="current-filename" style="font-size: 0.7rem; color: var(--text-dim); margin-top: 4px;">Filename:
-      VoiceDraft_v1.md</div>
+    <div id="current-filename" style="font-size: 0.7rem; color: var(--text-dim); margin-top: 4px;">Filename: Loading...
+    </div>
     <div style="margin-top: 10px; display: flex; gap: 8px; justify-content: center;">
       <button id="select-file-btn" class="btn"
         style="padding: 8px 12px; font-size: 0.7rem; border-radius: 20px; display: inline-flex; flex-direction: row; width: auto; gap: 6px;">
-        <span>🏷️</span><span id="file-status">名前を引用するファイルを選択</span>
+        <span>🏷️</span><span id="file-status">引用元ファイルを選択（名前のみ取得）</span>
       </button>
     </div>
   </header>
@@ -327,7 +327,7 @@
       return currentFullFilename;
     }
 
-    // ファイル選択からベース名を取得 (ダウンロード方式へ一本化するため、ハンドルは保持しない)
+    // ★引用元ファイルの選択（名前のみ取得）
     selectFileBtn.onclick = async () => {
       try {
         const [fileHandle] = await window.showOpenFilePicker({
@@ -336,15 +336,14 @@
         });
         // 拡張子を除去してベース名にする
         baseFileName = fileHandle.name.replace(/\.md$/i, '');
-        fileStatusText.textContent = `Base: ${baseFileName}`;
+        fileStatusText.textContent = `引用元: ${baseFileName}`;
         selectFileBtn.style.borderColor = "var(--success)";
-        versionCount = 1; // バージョンをリセット
         updateFilenameDisplay();
-        toast(`ベース名を「${baseFileName}」に変更しました`);
+        toast(`ベース名を「${baseFileName}」に設定しました`);
       } catch (err) {
         if (err.name !== 'AbortError') {
           console.error('File Picker Error:', err);
-          toast('ファイル選択に失敗しました');
+          alert('ファイル取得エラー: ' + err.message);
         }
       }
     };
@@ -367,10 +366,8 @@
         now.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' });
     }
 
-    // ★ブラウザ標準のダウンロード方式 (確実な保存)
+    // 従来のダウンロード方式（フォールバック用）
     function triggerDownload(content, filename) {
-      if (!content) return false;
-
       const blob = new Blob([content], { type: 'text/markdown' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -382,7 +379,48 @@
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
       }, 0);
-      return true;
+    }
+
+    // ★堅牢な保存処理 (Save File Picker)
+    async function performSave(content, suggestedFilename) {
+      if (!content) return false;
+
+      // File System Access API に対応しているかチェック
+      if ('showSaveFilePicker' in window) {
+        try {
+          const fileHandle = await window.showSaveFilePicker({
+            suggestedName: suggestedFilename,
+            types: [{
+              description: 'Markdown File',
+              accept: { 'text/markdown': ['.md'] },
+            }],
+          });
+
+          // 堅牢な書き込み処理 (await で確実に行う)
+          const writable = await fileHandle.createWritable();
+          await writable.write(content);
+          await writable.close(); // 必ず close を待つ
+
+          return true;
+        } catch (err) {
+          if (err.name === 'AbortError') {
+            return false; // ユーザーキャンセル
+          }
+          console.error('Save Error:', err);
+          alert('保存エラー: ' + err.message);
+          return false;
+        }
+      } else {
+        // フォールバック: 従来のダウンロード方式
+        try {
+          triggerDownload(content, suggestedFilename);
+          toast('ダウンロードを開始しました');
+          return true;
+        } catch (err) {
+          alert('フォールバック保存エラー: ' + err.message);
+          return false;
+        }
+      }
     }
 
     function toast(m) {
@@ -483,29 +521,33 @@
       } catch (err) { toast('失敗'); }
     };
 
-    // Copy & Next (ダウンロード + バージョンアップ)
-    document.getElementById('copy-next-btn').onclick = () => {
+    // Copy & Next (保存ダイアログ + バージョンアップ)
+    document.getElementById('copy-next-btn').onclick = async () => {
       const text = transcriptDiv.innerText;
       if (!text || text.trim() === "") return toast('内容がありません');
 
-      const filename = updateFilenameDisplay();
-      if (triggerDownload(text, filename)) {
+      const suggestedFilename = updateFilenameDisplay();
+      const success = await performSave(text, suggestedFilename);
+
+      if (success) {
         flashButton(document.getElementById('copy-next-btn'));
         versionCount++;
         updateFilenameDisplay();
-        toast(`『${filename}』を保存しました`);
+        toast('保存完了');
       }
     };
 
-    // 保存 (現在のファイル名でダウンロード)
-    document.getElementById('save-btn').onclick = () => {
+    // 保存 (現在のファイル名で保存ダイアログを表示)
+    document.getElementById('save-btn').onclick = async () => {
       const text = transcriptDiv.innerText;
       if (!text || text.trim() === "") return toast('内容がありません');
 
-      const filename = updateFilenameDisplay();
-      if (triggerDownload(text, filename)) {
+      const suggestedFilename = updateFilenameDisplay();
+      const success = await performSave(text, suggestedFilename);
+
+      if (success) {
         flashButton(document.getElementById('save-btn'));
-        toast(`『${filename}』を保存しました`);
+        toast('保存完了');
       }
     };
 
