@@ -190,13 +190,13 @@
     }
 
     .btn-bar {
-      display: flex;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
       width: 100%;
       gap: 12px;
     }
 
     .btn {
-      flex: 1;
       background: var(--surface);
       border: 1px solid var(--border);
       color: white;
@@ -215,6 +215,11 @@
     .btn:active {
       background: var(--card);
       transform: translateY(2px);
+    }
+
+    .btn.success-flash {
+      background: var(--success) !important;
+      color: var(--bg) !important;
     }
 
     .btn i {
@@ -236,7 +241,7 @@
 
     #toast {
       position: fixed;
-      bottom: 120px;
+      bottom: 200px;
       left: 50%;
       transform: translateX(-50%);
       background: var(--accent);
@@ -258,6 +263,7 @@
   <header>
     <div id="current-clock">00:00</div>
     <div id="current-date">----/--/--</div>
+    <div id="current-filename" style="font-size: 0.7rem; color: var(--text-dim); margin-top: 4px;">Filename: YYYYMMDD_HHMM_v1.md</div>
   </header>
 
   <div class="main">
@@ -275,13 +281,14 @@
       <div class="main-action">
         <button id="undo-btn" title="一歩戻る">↩️</button>
         <button id="record-btn">🎙️</button>
-        <div style="width: 50px;"></div> <!-- レイアウト調整用 -->
+        <button id="paste-btn" class="btn" style="width: 50px; height: 50px; border-radius: 50%; padding: 0;"><span>📋</span><span style="font-size: 0.6rem;">Paste</span></button>
       </div>
 
       <div class="btn-bar">
-        <button class="btn" id="save-btn"><span>💾</span><span>保存</span></button>
+        <button class="btn" id="copy-next-btn" style="background: var(--accent); border-color: var(--accent);"><span>⏭️</span><span>Copy & Next</span></button>
+        <button class="btn" id="save-btn"><span>💾</span><span>単体保存</span></button>
         <button class="btn" id="copy-btn"><span>📋</span><span>コピー</span></button>
-        <button class="btn" id="clear-btn" style="color: var(--danger)"><span>🗑️</span><span>消去</span></button>
+        <button class="btn" id="clear-btn" style="color: var(--danger)"><span>🗑️</span><span>全消去</span></button>
       </div>
     </div>
   </div>
@@ -292,28 +299,39 @@
     const transcriptDiv = document.getElementById('transcript');
     const recordBtn = document.getElementById('record-btn');
     const undoBtn = document.getElementById('undo-btn');
+    const pasteBtn = document.getElementById('paste-btn');
     const statusText = document.getElementById('status-text');
     const charCountArea = document.getElementById('char-count');
+    const filenameDisplay = document.getElementById('current-filename');
 
     let recognition = null;
     let isRecording = false;
     let silenceTimer = null;
     let history = []; // 確定文の履歴スタック
 
+    // セッションファイル名管理
+    let currentVersion = 1;
+    let baseTimestamp = '';
+    let currentFilename = '';
+
+    function initFilename() {
+      const now = new Date();
+      baseTimestamp = now.getFullYear() +
+        (now.getMonth() + 1).toString().padStart(2, '0') +
+        now.getDate().toString().padStart(2, '0') + "_" +
+        now.getHours().toString().padStart(2, '0') +
+        now.getMinutes().toString().padStart(2, '0');
+      updateFilenameDisplay();
+    }
+
+    function updateFilenameDisplay() {
+      currentFilename = `${baseTimestamp}_v${currentVersion}.md`;
+      filenameDisplay.textContent = `Filename: ${currentFilename}`;
+    }
+
     // 履歴の保存
     function saveHistory() {
       localStorage.setItem('vd_history', JSON.stringify(history));
-    }
-
-    // 履歴の復元
-    const savedHistory = localStorage.getItem('vd_history');
-    if (savedHistory) {
-      try {
-        history = JSON.parse(savedHistory);
-      } catch (e) {
-        console.error('Failed to parse history', e);
-        history = [];
-      }
     }
 
     function updateCharCount() {
@@ -330,13 +348,12 @@
         now.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' });
     }
     setInterval(tick, 1000); tick();
+    initFilename();
 
-    // 復元
-    const saved = localStorage.getItem('vd_draft');
-    if (saved) {
-      transcriptDiv.innerText = saved;
-      updateCharCount();
-    }
+    // 起動時は常に新規ファイルとして開始するため、以前のドラフトは復元しない (リクエストに基づく)
+    // ただし、誤操作防止のため localStorage はクリアせずに上書きのみ行う
+    transcriptDiv.innerText = '';
+    updateCharCount();
 
     // 自動改行アシスト用
     function resetSilenceTimer() {
@@ -349,14 +366,14 @@
           let added = '';
           // 文末が句点でない場合は追加し、改行を入れる
           let lastChar = text.slice(-1);
-          if (!['。', '！', '？', '!', '?'].includes(lastChar)) {
+          if (!['。', '！', '？', '!', '?', '.', ','].includes(lastChar)) {
             added += '。';
           }
           added += '\n';
           transcriptDiv.innerText += added;
           history.push(added); // 改行分も履歴に積む
           saveHistory();
-          save();
+          saveToLocal();
           updateCharCount();
           transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
         }
@@ -384,7 +401,7 @@
           history.push(processed); // 履歴に追加
           saveHistory();
 
-          save();
+          saveToLocal();
           updateCharCount();
           transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
           resetSilenceTimer(); // 入力があったのでタイマーリセット
@@ -413,7 +430,7 @@
       recognition.onerror = (e) => {
         console.error('Speech recognition error:', e.error);
         if (e.error === 'not-allowed') {
-          alert('マイクの使用が許可されていません');
+          toast('マイクの使用を許可してください');
           isRecording = false;
         }
       };
@@ -427,12 +444,12 @@
         if (recognition) {
           recognition.start();
         } else {
-          alert('このブラウザは音声認識に対応していません');
+          toast('音声認識非対応ブラウザです');
         }
       }
     };
 
-    // 一歩戻るボタン (多段階UNDO対応 & 履歴永続化)
+    // 一歩戻るボタン
     undoBtn.onclick = () => {
       if (history.length > 0) {
         const lastInput = history.pop();
@@ -440,14 +457,11 @@
 
         if (currentText.endsWith(lastInput)) {
           transcriptDiv.innerText = currentText.slice(0, -lastInput.length);
-          save();
+          saveToLocal();
           saveHistory();
           updateCharCount();
-          toast('取り消しました');
+          toast('1ステップ戻しました');
         } else {
-          // テキストエリアを手動編集した場合などで文末が一致しない場合
-          // 整合性を保つため履歴を破棄していくか、警告を出す。
-          // ここではユーザーが混乱しないよう、文末が一致しない場合は履歴を一つスキップして次を探す
           undoBtn.onclick();
         }
       } else {
@@ -455,7 +469,26 @@
       }
     };
 
-    function save() {
+    // ペーストボタン
+    pasteBtn.onclick = async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text) {
+          const processedText = `\n${text}\n`;
+          transcriptDiv.innerText += processedText;
+          history.push(processedText);
+          saveHistory();
+          saveToLocal();
+          updateCharCount();
+          transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
+          toast('ペーストしました');
+        }
+      } catch (err) {
+        toast('ペーストに失敗しました');
+      }
+    };
+
+    function saveToLocal() {
       localStorage.setItem('vd_draft', transcriptDiv.innerText);
     }
 
@@ -466,51 +499,43 @@
       setTimeout(() => t.style.opacity = 0, 1500);
     }
 
-    // 保存ボタン (File System Access API 対応)
-    document.getElementById('save-btn').onclick = async () => {
+    // ダウンロード処理
+    function downloadFile(content, filename) {
+      const blob = new Blob([content], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function flashButton(btn) {
+      btn.classList.add('success-flash');
+      setTimeout(() => btn.classList.remove('success-flash'), 500);
+    }
+
+    // バージョンアップ保存（Copy & Next）
+    document.getElementById('copy-next-btn').onclick = () => {
       const text = transcriptDiv.innerText;
-      if (!text || text.trim() === "") return toast('保存する内容がありません');
+      if (!text || text.trim() === "") return toast('内容がありません');
 
-      const now = new Date();
-      const timestamp = now.getFullYear() +
-        (now.getMonth() + 1).toString().padStart(2, '0') +
-        now.getDate().toString().padStart(2, '0') + "_" +
-        now.getHours().toString().padStart(2, '0') +
-        now.getMinutes().toString().padStart(2, '0');
+      downloadFile(text, currentFilename);
+      flashButton(document.getElementById('copy-next-btn'));
+      
+      // バージョンを上げて次へ
+      currentVersion++;
+      updateFilenameDisplay();
+      toast(`Saved as v${currentVersion - 1}. Now on v${currentVersion}`);
+    };
 
-      const defaultFilename = `VoiceDraft_${timestamp}.md`;
-
-      // File System Access API が使えるかチェック
-      if ('showSaveFilePicker' in window) {
-        try {
-          const handle = await window.showSaveFilePicker({
-            suggestedName: defaultFilename,
-            types: [{
-              description: 'Markdown File',
-              accept: { 'text/markdown': ['.md'] },
-            }],
-          });
-          const writable = await handle.createWritable();
-          await writable.write(text);
-          await writable.close();
-          toast('保存完了');
-        } catch (err) {
-          if (err.name !== 'AbortError') {
-            console.error(err);
-            toast('保存に失敗しました');
-          }
-        }
-      } else {
-        // フォールバック: 従来のダウンロード方式
-        const blob = new Blob([text], { type: 'text/markdown' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = defaultFilename;
-        a.click();
-        URL.revokeObjectURL(url);
-        toast('ダウンロードフォルダに保存しました');
-      }
+    // 単体保存ボタン
+    document.getElementById('save-btn').onclick = () => {
+      const text = transcriptDiv.innerText;
+      if (!text || text.trim() === "") return toast('内容がありません');
+      downloadFile(text, currentFilename);
+      flashButton(document.getElementById('save-btn'));
+      toast('ファイルを保存しました');
     };
 
     // コピーボタン
@@ -518,25 +543,28 @@
       const text = transcriptDiv.innerText;
       if (!text) return toast('コピーする内容がありません');
       navigator.clipboard.writeText(text).then(() => {
-        toast('クリップボードにコピーしました');
+        toast('コピーしました');
       });
     };
 
-    // 消去ボタン
+    // 消去ボタン (confirmを排除し、即時実行)
     document.getElementById('clear-btn').onclick = () => {
-      if (confirm('すべての内容を消去しますか？')) {
-        transcriptDiv.innerText = '';
-        history = [];
-        save();
-        updateCharCount();
-        toast('消去しました');
-      }
+      transcriptDiv.innerText = '';
+      history = [];
+      saveToLocal();
+      saveHistory();
+      updateCharCount();
+      toast('画面をクリアしました');
     };
 
     transcriptDiv.oninput = () => {
-      save();
+      saveToLocal();
       updateCharCount();
     };
+  </script>
+</body>
+
+</html>
   </script>
 </body>
 
