@@ -295,6 +295,11 @@
 
   <div id="toast"></div>
 
+  <!-- App Version Footer -->
+  <div style="text-align: center; padding: 10px; font-size: 0.6rem; color: var(--text-dim); opacity: 0.5;">
+    App Version: Fix-05
+  </div>
+
   <script>
     const transcriptDiv = document.getElementById('transcript');
     const recordBtn = document.getElementById('record-btn');
@@ -352,7 +357,8 @@
 
     // 従来のダウンロード方式（フォールバック用：遅延付きで空ファイル防止）
     function triggerDownload(content, filename) {
-      const blob = new Blob([content], { type: 'text/markdown' });
+      // BOMを付加し、チャットセットを明示的に指定
+      const blob = new Blob(["\uFEFF" + content], { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -371,6 +377,10 @@
     async function performSave(content, suggestedFilename) {
       if (!content) return false;
 
+      // 保存前の確定フィードバック
+      toast(`保存準備中: ${content.length}文字`);
+      console.log(`Saving ${content.length} characters...`);
+
       let success = false;
       // File System Access API に対応しているかチェック
       if ('showSaveFilePicker' in window) {
@@ -379,13 +389,14 @@
           const fileHandle = await window.showSaveFilePicker({
             suggestedName: suggestedFilename,
             types: [{
-              description: 'Markdown File',
-              accept: { 'text/markdown': ['.md'] },
+              description: 'Text File',
+              accept: { 'text/plain': ['.md'] },
             }],
           });
 
           const writable = await fileHandle.createWritable();
-          await writable.write(content);
+          // 書き込み時にもBOMを付加
+          await writable.write("\uFEFF" + content);
           await writable.close();
           success = true;
         } catch (err) {
