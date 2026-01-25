@@ -297,7 +297,7 @@
 
   <!-- App Version Footer -->
   <div style="text-align: center; padding: 10px; font-size: 0.6rem; color: var(--text-dim); opacity: 0.5;">
-    App Version: Fix-05
+    App Version: Fix-06
   </div>
 
   <script>
@@ -357,8 +357,8 @@
 
     // 従来のダウンロード方式（フォールバック用：遅延付きで空ファイル防止）
     function triggerDownload(content, filename) {
-      // BOMを付加し、チャットセットを明示的に指定
-      const blob = new Blob(["\uFEFF" + content], { type: 'text/plain;charset=utf-8' });
+      // BOMを付加し、バイナリストリームとして扱う（.txtの自動付与を回避）
+      const blob = new Blob(["\uFEFF" + content], { type: 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -389,8 +389,8 @@
           const fileHandle = await window.showSaveFilePicker({
             suggestedName: suggestedFilename,
             types: [{
-              description: 'Text File',
-              accept: { 'text/plain': ['.md'] },
+              description: 'Markdown File',
+              accept: { 'application/octet-stream': ['.md'] },
             }],
           });
 
