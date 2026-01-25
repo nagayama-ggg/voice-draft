@@ -374,7 +374,7 @@
       // File System Access API に対応しているかチェック
       if ('showSaveFilePicker' in window) {
         try {
-          // 毎回新規でピッカーを開く（ハンドルの再利用はあえてしない）
+          // 毎回新規でピッカーを開く
           const fileHandle = await window.showSaveFilePicker({
             suggestedName: suggestedFilename,
             types: [{
@@ -392,26 +392,18 @@
             success = false;
           } else {
             console.error('Save Error:', err);
-            // showSaveFilePickerに失敗した場合はダウンロードにフォールバック
             triggerDownload(content, suggestedFilename);
             success = true;
           }
         }
       } else {
-        // フォールバック: 従来のダウンロード方式
         triggerDownload(content, suggestedFilename);
         success = true;
       }
 
-      // ★重要: ダイアログによって音声認識が止まった場合、録音中フラグがONなら再開する
-      if (isRecording && recognition) {
-        try {
-          recognition.start();
-          console.log("SpeechRecognition restarted after save dialog.");
-        } catch (err) {
-          // すでに動いている場合はエラーになるが無視してOK
-          console.warn("Recognition start skipped:", err);
-        }
+      // ★保存後のフォローアップ通知 (自動再開はせず、ユーザーに促す)
+      if (success) {
+        toast("保存しました。マイクを押して再開");
       }
 
       return success;
@@ -459,12 +451,10 @@
       };
 
       recognition.onend = () => {
-        if (isRecording) {
-          try { recognition.start(); } catch (err) { console.error(err); }
-        } else {
-          recordBtn.classList.remove('recording');
-          statusText.textContent = 'Ready';
-        }
+        // 常に録音フラグとUIをリセット
+        isRecording = false;
+        recordBtn.classList.remove('recording');
+        statusText.textContent = 'Ready';
       };
 
       recognition.onerror = (e) => {
