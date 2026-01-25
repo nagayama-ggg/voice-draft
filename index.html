@@ -308,6 +308,7 @@
     let isRecording = false;
     let silenceTimer = null;
     let history = [];
+    let versionCount = 1;
 
     // ヘルパー: 日時文字列取得 (YYYYMMDD_HHMM)
     function getDateTimeString() {
@@ -322,7 +323,7 @@
 
     function generateFilename() {
       const dt = getDateTimeString();
-      return `VoiceDraft_${dt}.md`;
+      return `VoiceDraft_${dt}_v${versionCount}.md`;
     }
 
     function updateFilenameDisplay() {
@@ -451,10 +452,18 @@
       };
 
       recognition.onend = () => {
-        // 常に録音フラグとUIをリセット
-        isRecording = false;
-        recordBtn.classList.remove('recording');
-        statusText.textContent = 'Ready';
+        // ユーザーが手動で停止（isRecording = false）していない場合は、自動再開を試みる
+        if (isRecording) {
+          try {
+            recognition.start();
+            console.log("SpeechRecognition automatically restarted.");
+          } catch (err) {
+            console.error("Recognition restart error:", err);
+          }
+        } else {
+          recordBtn.classList.remove('recording');
+          statusText.textContent = 'Ready';
+        }
       };
 
       recognition.onerror = (e) => {
@@ -531,6 +540,8 @@
 
       if (success) {
         flashButton(document.getElementById('save-btn'));
+        versionCount++;
+        updateFilenameDisplay();
         toast('保存完了');
       }
     };
