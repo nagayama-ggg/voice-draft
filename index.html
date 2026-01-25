@@ -261,6 +261,8 @@
     <div id="current-filename" style="font-size: 0.7rem; color: var(--text-dim); margin-top: 4px;">Filename: Loading...
     </div>
     <div style="margin-top: 10px; display: flex; gap: 8px; justify-content: center;">
+      <!-- 隠しファイル入力 -->
+      <input type="file" id="file-input" accept=".md" style="display: none;">
       <button id="select-file-btn" class="btn"
         style="padding: 8px 12px; font-size: 0.7rem; border-radius: 20px; display: inline-flex; flex-direction: row; width: auto; gap: 6px;">
         <span>🏷️</span><span id="file-status">引用元ファイルを選択（名前のみ取得）</span>
@@ -307,6 +309,7 @@
     const undoBtn = document.getElementById('undo-btn');
     const pasteBtn = document.getElementById('paste-btn');
     const selectFileBtn = document.getElementById('select-file-btn');
+    const fileInput = document.getElementById('file-input');
     const fileStatusText = document.getElementById('file-status');
     const statusText = document.getElementById('status-text');
     const charCountArea = document.getElementById('char-count');
@@ -318,33 +321,44 @@
     let history = [];
 
     // ファイル名管理 (グローバル変数)
-    let baseFileName = "VoiceDraft";
+    let baseFileName = "Draft";
     let versionCount = 1;
 
+    // ヘルパー: 日時文字列取得 (YYYYMMDD_HHMM)
+    function getDateTimeString() {
+      const now = new Date();
+      const Y = now.getFullYear();
+      const M = String(now.getMonth() + 1).padStart(2, '0');
+      const D = String(now.getDate()).padStart(2, '0');
+      const h = String(now.getHours()).padStart(2, '0');
+      const m = String(now.getMinutes()).padStart(2, '0');
+      return `${Y}${M}${D}_${h}${m}`;
+    }
+
+    function generateFilename() {
+      const dt = getDateTimeString();
+      return `${baseFileName}_${dt}_v${versionCount}.md`;
+    }
+
     function updateFilenameDisplay() {
-      const currentFullFilename = `${baseFileName}_v${versionCount}.md`;
+      const currentFullFilename = generateFilename();
       filenameDisplay.textContent = `Filename: ${currentFullFilename}`;
       return currentFullFilename;
     }
 
-    // ★引用元ファイルの選択（名前のみ取得）
-    selectFileBtn.onclick = async () => {
-      try {
-        const [fileHandle] = await window.showOpenFilePicker({
-          types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }],
-          multiple: false
-        });
+    // ★引用元ファイルの選択（名前のみ取得 - 最も互換性の高い <input type="file"> 方式）
+    selectFileBtn.onclick = () => fileInput.click();
+
+    fileInput.onchange = (e) => {
+      const file = e.target.files[0];
+      if (file) {
         // 拡張子を除去してベース名にする
-        baseFileName = fileHandle.name.replace(/\.md$/i, '');
+        baseFileName = file.name.replace(/\.[^/.]+$/, "");
         fileStatusText.textContent = `引用元: ${baseFileName}`;
         selectFileBtn.style.borderColor = "var(--success)";
+        versionCount = 1; // 引用元を変えたらバージョンをリセット
         updateFilenameDisplay();
         toast(`ベース名を「${baseFileName}」に設定しました`);
-      } catch (err) {
-        if (err.name !== 'AbortError') {
-          console.error('File Picker Error:', err);
-          alert('ファイル取得エラー: ' + err.message);
-        }
       }
     };
 
@@ -366,7 +380,7 @@
         now.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' });
     }
 
-    // 従来のダウンロード方式（フォールバック用）
+    // 従来のダウンロード方式（フォールバック用：遅延付きで空ファイル防止）
     function triggerDownload(content, filename) {
       const blob = new Blob([content], { type: 'text/markdown' });
       const url = URL.createObjectURL(blob);
@@ -375,19 +389,22 @@
       a.download = filename;
       document.body.appendChild(a);
       a.click();
+
+      // Android等での空ファイル対策: 十分な遅延を入れてから revoke する
       setTimeout(() => {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-      }, 0);
+      }, 1000);
     }
 
-    // ★堅牢な保存処理 (Save File Picker)
+    // ★保存処理 (毎回必ず新規ダイアログを開く)
     async function performSave(content, suggestedFilename) {
       if (!content) return false;
 
       // File System Access API に対応しているかチェック
       if ('showSaveFilePicker' in window) {
         try {
+          // 毎回新規でピッカーを開く（ハンドルの再利用はあえてしない）
           const fileHandle = await window.showSaveFilePicker({
             suggestedName: suggestedFilename,
             types: [{
@@ -396,30 +413,21 @@
             }],
           });
 
-          // 堅牢な書き込み処理 (await で確実に行う)
           const writable = await fileHandle.createWritable();
           await writable.write(content);
-          await writable.close(); // 必ず close を待つ
-
+          await writable.close();
           return true;
         } catch (err) {
-          if (err.name === 'AbortError') {
-            return false; // ユーザーキャンセル
-          }
+          if (err.name === 'AbortError') return false;
           console.error('Save Error:', err);
-          alert('保存エラー: ' + err.message);
-          return false;
+          // showSaveFilePickerに失敗した場合はダウンロードにフォールバック
+          triggerDownload(content, suggestedFilename);
+          return true;
         }
       } else {
         // フォールバック: 従来のダウンロード方式
-        try {
-          triggerDownload(content, suggestedFilename);
-          toast('ダウンロードを開始しました');
-          return true;
-        } catch (err) {
-          alert('フォールバック保存エラー: ' + err.message);
-          return false;
-        }
+        triggerDownload(content, suggestedFilename);
+        return true;
       }
     }
 
