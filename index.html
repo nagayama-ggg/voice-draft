@@ -364,7 +364,7 @@
       setTimeout(() => {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-      }, 1000);
+      }, 5000);
     }
 
     // ★保存処理 (毎回必ず新規ダイアログを開く)
@@ -516,8 +516,20 @@
 
     // Copy & Next (保存ダイアログ + バージョンアップ)
     document.getElementById('copy-next-btn').onclick = async () => {
-      const text = transcriptDiv.innerText;
-      if (!text || text.trim() === "") return toast('内容がありません');
+      // 1. 保存開始時にマイクを強制終了して競合を防ぐ
+      if (isRecording) {
+        isRecording = false;
+        recognition.stop();
+        recordBtn.classList.remove('recording');
+        statusText.textContent = 'Ready';
+      }
+
+      // 2. 内容の確実な取得（空文字防止）
+      let text = transcriptDiv.innerText;
+      if (!text || text.trim() === "") {
+        text = " "; // 0バイトファイルを防ぐため半角スペースを入れる
+        toast('内容が空のためスペースを保存します');
+      }
 
       const suggestedFilename = updateFilenameDisplay();
       const success = await performSave(text, suggestedFilename);
@@ -532,8 +544,20 @@
 
     // 保存 (現在のファイル名で保存ダイアログを表示)
     document.getElementById('save-btn').onclick = async () => {
-      const text = transcriptDiv.innerText;
-      if (!text || text.trim() === "") return toast('内容がありません');
+      // 1. 保存開始時にマイクを強制終了
+      if (isRecording) {
+        isRecording = false;
+        recognition.stop();
+        recordBtn.classList.remove('recording');
+        statusText.textContent = 'Ready';
+      }
+
+      // 2. 内容の確実な取得（空文字防止）
+      let text = transcriptDiv.innerText;
+      if (!text || text.trim() === "") {
+        text = " ";
+        toast('内容が空のためスペースを保存します');
+      }
 
       const suggestedFilename = updateFilenameDisplay();
       const success = await performSave(text, suggestedFilename);
