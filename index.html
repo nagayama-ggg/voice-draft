@@ -297,7 +297,7 @@
 
   <!-- App Version Footer -->
   <div style="text-align: center; padding: 10px; font-size: 0.6rem; color: var(--text-dim); opacity: 0.5;">
-    App Version: Fix-06
+    App Version: Fix-07
   </div>
 
   <script>
@@ -357,8 +357,12 @@
 
     // 従来のダウンロード方式（フォールバック用：遅延付きで空ファイル防止）
     function triggerDownload(content, filename) {
-      // BOMを付加し、バイナリストリームとして扱う（.txtの自動付与を回避）
-      const blob = new Blob(["\uFEFF" + content], { type: 'application/octet-stream' });
+      // 文字列をバイナリ(Uint8Array)に変換
+      const encoder = new TextEncoder();
+      const data = encoder.encode(content);
+
+      // バイナリストリームとして扱う（.txtの自動付与を回避）
+      const blob = new Blob([data], { type: 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -395,8 +399,10 @@
           });
 
           const writable = await fileHandle.createWritable();
-          // 書き込み時にもBOMを付加
-          await writable.write("\uFEFF" + content);
+          // バイナリに変換して書き込むことで0バイト問題を回避
+          const encoder = new TextEncoder();
+          const binaryData = encoder.encode(content);
+          await writable.write(binaryData);
           await writable.close();
           success = true;
         } catch (err) {
@@ -527,19 +533,23 @@
 
     // Copy & Next (保存ダイアログ + バージョンアップ)
     document.getElementById('copy-next-btn').onclick = async () => {
-      // 1. 保存開始時にマイクを強制終了して競合を防ぐ
+      // 1. 内容の確実な取得（空文字防止）
+      let text = transcriptDiv.innerText;
+
+      // 【デバッグ用】文字数確認アラート
+      alert("保存プロセス開始: " + text.length + "文字");
+
+      if (!text || text.trim() === "") {
+        text = " "; // 0バイトファイルを防ぐため半角スペースを入れる
+        toast('内容が空のためスペースを保存します');
+      }
+
+      // 2. 保存開始時にマイクを強制終了して競合を防ぐ
       if (isRecording) {
         isRecording = false;
         recognition.stop();
         recordBtn.classList.remove('recording');
         statusText.textContent = 'Ready';
-      }
-
-      // 2. 内容の確実な取得（空文字防止）
-      let text = transcriptDiv.innerText;
-      if (!text || text.trim() === "") {
-        text = " "; // 0バイトファイルを防ぐため半角スペースを入れる
-        toast('内容が空のためスペースを保存します');
       }
 
       const suggestedFilename = updateFilenameDisplay();
@@ -555,19 +565,23 @@
 
     // 保存 (現在のファイル名で保存ダイアログを表示)
     document.getElementById('save-btn').onclick = async () => {
-      // 1. 保存開始時にマイクを強制終了
+      // 1. 内容の確実な取得
+      let text = transcriptDiv.innerText;
+
+      // 【デバッグ用】文字数確認アラート
+      alert("保存プロセス開始: " + text.length + "文字");
+
+      if (!text || text.trim() === "") {
+        text = " ";
+        toast('内容が空のためスペースを保存します');
+      }
+
+      // 2. 保存開始時にマイクを強制終了
       if (isRecording) {
         isRecording = false;
         recognition.stop();
         recordBtn.classList.remove('recording');
         statusText.textContent = 'Ready';
-      }
-
-      // 2. 内容の確実な取得（空文字防止）
-      let text = transcriptDiv.innerText;
-      if (!text || text.trim() === "") {
-        text = " ";
-        toast('内容が空のためスペースを保存します');
       }
 
       const suggestedFilename = updateFilenameDisplay();
