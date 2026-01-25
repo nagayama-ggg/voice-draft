@@ -260,14 +260,6 @@
     <div id="current-date">----/--/--</div>
     <div id="current-filename" style="font-size: 0.7rem; color: var(--text-dim); margin-top: 4px;">Filename: Loading...
     </div>
-    <div style="margin-top: 10px; display: flex; gap: 8px; justify-content: center;">
-      <!-- 隠しファイル入力 -->
-      <input type="file" id="file-input" accept=".md" style="display: none;">
-      <button id="select-file-btn" class="btn"
-        style="padding: 8px 12px; font-size: 0.7rem; border-radius: 20px; display: inline-flex; flex-direction: row; width: auto; gap: 6px;">
-        <span>🏷️</span><span id="file-status">引用元ファイルを選択（名前のみ取得）</span>
-      </button>
-    </div>
   </header>
 
   <div class="main">
@@ -308,9 +300,6 @@
     const recordBtn = document.getElementById('record-btn');
     const undoBtn = document.getElementById('undo-btn');
     const pasteBtn = document.getElementById('paste-btn');
-    const selectFileBtn = document.getElementById('select-file-btn');
-    const fileInput = document.getElementById('file-input');
-    const fileStatusText = document.getElementById('file-status');
     const statusText = document.getElementById('status-text');
     const charCountArea = document.getElementById('char-count');
     const filenameDisplay = document.getElementById('current-filename');
@@ -319,10 +308,6 @@
     let isRecording = false;
     let silenceTimer = null;
     let history = [];
-
-    // ファイル名管理 (グローバル変数)
-    let baseFileName = "Draft";
-    let versionCount = 1;
 
     // ヘルパー: 日時文字列取得 (YYYYMMDD_HHMM)
     function getDateTimeString() {
@@ -337,7 +322,7 @@
 
     function generateFilename() {
       const dt = getDateTimeString();
-      return `${baseFileName}_${dt}_v${versionCount}.md`;
+      return `VoiceDraft_${dt}.md`;
     }
 
     function updateFilenameDisplay() {
@@ -345,22 +330,6 @@
       filenameDisplay.textContent = `Filename: ${currentFullFilename}`;
       return currentFullFilename;
     }
-
-    // ★引用元ファイルの選択（名前のみ取得 - 最も互換性の高い <input type="file"> 方式）
-    selectFileBtn.onclick = () => fileInput.click();
-
-    fileInput.onchange = (e) => {
-      const file = e.target.files[0];
-      if (file) {
-        // 拡張子を除去してベース名にする
-        baseFileName = file.name.replace(/\.[^/.]+$/, "");
-        fileStatusText.textContent = `引用元: ${baseFileName}`;
-        selectFileBtn.style.borderColor = "var(--success)";
-        versionCount = 1; // 引用元を変えたらバージョンをリセット
-        updateFilenameDisplay();
-        toast(`ベース名を「${baseFileName}」に設定しました`);
-      }
-    };
 
     function saveHistory() {
       localStorage.setItem('vd_history', JSON.stringify(history));
@@ -401,6 +370,7 @@
     async function performSave(content, suggestedFilename) {
       if (!content) return false;
 
+      let success = false;
       // File System Access API に対応しているかチェック
       if ('showSaveFilePicker' in window) {
         try {
@@ -416,19 +386,35 @@
           const writable = await fileHandle.createWritable();
           await writable.write(content);
           await writable.close();
-          return true;
+          success = true;
         } catch (err) {
-          if (err.name === 'AbortError') return false;
-          console.error('Save Error:', err);
-          // showSaveFilePickerに失敗した場合はダウンロードにフォールバック
-          triggerDownload(content, suggestedFilename);
-          return true;
+          if (err.name === 'AbortError') {
+            success = false;
+          } else {
+            console.error('Save Error:', err);
+            // showSaveFilePickerに失敗した場合はダウンロードにフォールバック
+            triggerDownload(content, suggestedFilename);
+            success = true;
+          }
         }
       } else {
         // フォールバック: 従来のダウンロード方式
         triggerDownload(content, suggestedFilename);
-        return true;
+        success = true;
       }
+
+      // ★重要: ダイアログによって音声認識が止まった場合、録音中フラグがONなら再開する
+      if (isRecording && recognition) {
+        try {
+          recognition.start();
+          console.log("SpeechRecognition restarted after save dialog.");
+        } catch (err) {
+          // すでに動いている場合はエラーになるが無視してOK
+          console.warn("Recognition start skipped:", err);
+        }
+      }
+
+      return success;
     }
 
     function toast(m) {
