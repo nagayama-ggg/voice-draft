@@ -282,13 +282,20 @@
             style="font-size: 0.6rem;">Paste</span></button>
       </div>
 
-      <div class="btn-bar">
-        <button class="btn" id="copy-next-btn"
-          style="background: var(--accent); border-color: var(--accent);"><span>⏭️</span><span>Copy &
-            Next</span></button>
-        <button class="btn" id="save-btn"><span>💾</span><span>保存</span></button>
+      <div class="btn-bar" style="grid-template-columns: 1fr 1fr; gap: 8px;">
+        <button class="btn" id="save-a-btn"
+          style="background: var(--accent); border-color: var(--accent); font-size: 0.8rem;">
+          <span>🚀 A</span><span>Base64</span>
+        </button>
+        <button class="btn" id="save-b-btn" style="background: var(--surface); font-size: 0.8rem;">
+          <span>📝 B</span><span>Markdown</span>
+        </button>
+        <button class="btn" id="save-c-btn" style="background: var(--surface); font-size: 0.8rem;">
+          <span>📄 C</span><span>Legacy</span>
+        </button>
         <button class="btn" id="copy-btn"><span>📋</span><span>コピー</span></button>
-        <button class="btn" id="clear-btn" style="color: var(--danger)"><span>🗑️</span><span>全消去</span></button>
+        <button class="btn" id="clear-btn"
+          style="color: var(--danger); grid-column: span 2;"><span>🗑️</span><span>全消去</span></button>
       </div>
     </div>
   </div>
@@ -297,7 +304,7 @@
 
   <!-- App Version Footer -->
   <div style="text-align: center; padding: 10px; font-size: 0.6rem; color: var(--text-dim); opacity: 0.5;">
-    App Version: Fix-07
+    App Version: Fix-08 (Test)
   </div>
 
   <script>
@@ -531,68 +538,93 @@
       } catch (err) { toast('失敗'); }
     };
 
-    // Copy & Next (保存ダイアログ + バージョンアップ)
-    document.getElementById('copy-next-btn').onclick = async () => {
-      // 1. 内容の確実な取得（空文字防止）
-      let text = transcriptDiv.innerText;
-
-      // 【デバッグ用】文字数確認アラート
-      alert("保存プロセス開始: " + text.length + "文字");
-
-      if (!text || text.trim() === "") {
-        text = " "; // 0バイトファイルを防ぐため半角スペースを入れる
-        toast('内容が空のためスペースを保存します');
-      }
-
-      // 2. 保存開始時にマイクを強制終了して競合を防ぐ
+    // 共通：保存開始時の処理（マイク停止）
+    function prepareForSave(text) {
       if (isRecording) {
         isRecording = false;
         recognition.stop();
         recordBtn.classList.remove('recording');
         statusText.textContent = 'Ready';
       }
+      toast(`保存準備中: ${text.length}文字`);
+      console.log(`Starting save process for ${text.length} chars...`);
+    }
 
-      const suggestedFilename = updateFilenameDisplay();
-      const success = await performSave(text, suggestedFilename);
+    // Save A: Base64 (本命：Blob回避)
+    document.getElementById('save-a-btn').onclick = () => {
+      let text = transcriptDiv.innerText;
+      if (!text || text.trim() === "") text = " ";
+      prepareForSave(text);
 
-      if (success) {
-        flashButton(document.getElementById('copy-next-btn'));
-        versionCount++;
-        updateFilenameDisplay();
-        toast('保存完了');
+      const filename = `TestA_v${versionCount}.md`;
+      try {
+        // Base64エンコード (UTF-8を考慮)
+        const base64Data = btoa(unescape(encodeURIComponent(text)));
+        const dataUri = `data:text/markdown;base64,${base64Data}`;
+
+        const a = document.createElement('a');
+        a.href = dataUri;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+
+        setTimeout(() => {
+          document.body.removeChild(a);
+          versionCount++;
+          updateFilenameDisplay();
+          toast('Save A (Base64) 実行');
+        }, 1000);
+      } catch (err) {
+        alert("Save A Error: " + err.message);
       }
     };
 
-    // 保存 (現在のファイル名で保存ダイアログを表示)
-    document.getElementById('save-btn').onclick = async () => {
-      // 1. 内容の確実な取得
+    // Save B: Markdown Blob (正攻法)
+    document.getElementById('save-b-btn').onclick = () => {
       let text = transcriptDiv.innerText;
+      if (!text || text.trim() === "") text = " ";
+      prepareForSave(text);
 
-      // 【デバッグ用】文字数確認アラート
-      alert("保存プロセス開始: " + text.length + "文字");
+      const filename = `TestB_v${versionCount}.md`;
+      const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
 
-      if (!text || text.trim() === "") {
-        text = " ";
-        toast('内容が空のためスペースを保存します');
-      }
-
-      // 2. 保存開始時にマイクを強制終了
-      if (isRecording) {
-        isRecording = false;
-        recognition.stop();
-        recordBtn.classList.remove('recording');
-        statusText.textContent = 'Ready';
-      }
-
-      const suggestedFilename = updateFilenameDisplay();
-      const success = await performSave(text, suggestedFilename);
-
-      if (success) {
-        flashButton(document.getElementById('save-btn'));
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
         versionCount++;
         updateFilenameDisplay();
-        toast('保存完了');
-      }
+        toast('Save B (Markdown) 実行');
+      }, 5000);
+    };
+
+    // Save C: Legacy Text Blob (保険)
+    document.getElementById('save-c-btn').onclick = () => {
+      let text = transcriptDiv.innerText;
+      if (!text || text.trim() === "") text = " ";
+      prepareForSave(text);
+
+      const filename = `TestC_v${versionCount}.md`;
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        versionCount++;
+        updateFilenameDisplay();
+        toast('Save C (Legacy) 実行');
+      }, 5000);
     };
 
     document.getElementById('copy-btn').onclick = () => {
