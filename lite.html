@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport"
     content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>Voice Draft Lite</title>
+  <title>Voice Draft Pro - 安定保存版</title>
   <style>
     :root {
       --bg: #000000;
@@ -296,14 +296,16 @@
 
     let recognition = null;
     let isRecording = false;
-    let isSaving = false;
+    let isSaving = false; // 保存中かどうかのフラグ
     let silenceTimer = null;
     let history = [];
 
+    // 履歴の保存
     function saveHistory() {
       localStorage.setItem('vd_history', JSON.stringify(history));
     }
 
+    // 履歴の復元
     const savedHistory = localStorage.getItem('vd_history');
     if (savedHistory) {
       try {
@@ -357,6 +359,7 @@
       }, 2000);
     }
 
+    // 音声認識の初期化
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SR) {
       recognition = new SR();
@@ -392,6 +395,7 @@
       };
 
       recognition.onend = () => {
+        // 保存中なら自動再開しない（エラー防止）
         if (isSaving) {
           isRecording = false;
           recordBtn.classList.remove('recording');
@@ -412,8 +416,11 @@
 
       recognition.onerror = (e) => {
         console.error('Speech recognition error:', e.error);
+        // 保存中はエラーを無視する
         if (isSaving) return;
+
         if (e.error === 'not-allowed') {
+          // アラートを消し、静かに停止する
           toast('マイク権限が必要です');
           isRecording = false;
         }
@@ -462,10 +469,12 @@
       setTimeout(() => t.style.opacity = 0, 1500);
     }
 
+    // 保存ボタン修正版
     document.getElementById('save-btn').onclick = async () => {
       const text = transcriptDiv.innerText;
       if (!text || text.trim() === "") return toast('内容がありません');
 
+      // ★重要：保存前にマイクを安全に停止する
       isSaving = true;
       if (isRecording) {
         isRecording = false;
@@ -473,16 +482,16 @@
         toast('保存のため一時停止...');
       }
 
+      // ファイル名生成
       const now = new Date();
       const timestamp = now.getFullYear() +
         (now.getMonth() + 1).toString().padStart(2, '0') +
         now.getDate().toString().padStart(2, '0') + "_" +
         now.getHours().toString().padStart(2, '0') +
         now.getMinutes().toString().padStart(2, '0');
-      
-      // ★変更点2：ファイル名に _Lite_ を追加
-      const defaultFilename = `VoiceDraft_Lite_${timestamp}.md`;
+      const defaultFilename = `VoiceDraft_${timestamp}.md`;
 
+      // 少し待ってから保存処理（マイク停止を待つ）
       setTimeout(async () => {
         if ('showSaveFilePicker' in window) {
           try {
@@ -506,6 +515,8 @@
         } else {
           fallbackSave(text, defaultFilename);
         }
+        
+        // 保存処理終了（フラグ解除）
         isSaving = false;
       }, 500);
     };
