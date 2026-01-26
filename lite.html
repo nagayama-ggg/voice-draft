@@ -5,13 +5,14 @@
   <meta charset="UTF-8">
   <meta name="viewport"
     content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>Voice Draft Lite</title>
+  <title>Voice Draft Pro - ダークモード & 自動改行</title>
   <style>
     :root {
       --bg: #000000;
       --surface: #121212;
       --card: #1c1c1e;
       --accent: #0a84ff;
+      /* インクブルー系のアクセント */
       --danger: #ff453a;
       --success: #32d74b;
       --text: #ffffff;
@@ -41,14 +42,6 @@
       text-align: center;
       flex-shrink: 0;
       background: linear-gradient(to bottom, var(--surface), var(--bg));
-    }
-
-    #app-title {
-      font-size: 1rem;
-      font-weight: 700;
-      color: var(--accent);
-      margin-bottom: 4px;
-      opacity: 0.9;
     }
 
     #current-clock {
@@ -98,9 +91,17 @@
     }
 
     @keyframes pulse {
-      0% { opacity: 1; }
-      50% { opacity: 0.4; }
-      100% { opacity: 1; }
+      0% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.4;
+      }
+
+      100% {
+        opacity: 1;
+      }
     }
 
     .editor {
@@ -255,7 +256,6 @@
 
 <body>
   <header>
-    <div id="app-title">Voice Draft Lite</div>
     <div id="current-clock">00:00</div>
     <div id="current-date">----/--/--</div>
   </header>
@@ -275,7 +275,7 @@
       <div class="main-action">
         <button id="undo-btn" title="一歩戻る">↩️</button>
         <button id="record-btn">🎙️</button>
-        <div style="width: 50px;"></div>
+        <div style="width: 50px;"></div> <!-- レイアウト調整用 -->
       </div>
 
       <div class="btn-bar">
@@ -297,9 +297,8 @@
 
     let recognition = null;
     let isRecording = false;
-    let isSaving = false;
     let silenceTimer = null;
-    let history = [];
+    let history = []; // 確定文の履歴スタック
 
     // 履歴の保存
     function saveHistory() {
@@ -312,6 +311,7 @@
       try {
         history = JSON.parse(savedHistory);
       } catch (e) {
+        console.error('Failed to parse history', e);
         history = [];
       }
     }
@@ -331,32 +331,39 @@
     }
     setInterval(tick, 1000); tick();
 
+    // 復元
     const saved = localStorage.getItem('vd_draft');
     if (saved) {
       transcriptDiv.innerText = saved;
       updateCharCount();
     }
 
+    // 自動改行アシスト用
     function resetSilenceTimer() {
       clearTimeout(silenceTimer);
       if (!isRecording) return;
+
       silenceTimer = setTimeout(() => {
         const text = transcriptDiv.innerText.trim();
         if (text && !text.endsWith('\n')) {
           let added = '';
+          // 文末が句点でない場合は追加し、改行を入れる
           let lastChar = text.slice(-1);
-          if (!['。', '！', '？', '!', '?'].includes(lastChar)) { added += '。'; }
+          if (!['。', '！', '？', '!', '?'].includes(lastChar)) {
+            added += '。';
+          }
           added += '\n';
           transcriptDiv.innerText += added;
-          history.push(added); 
+          history.push(added); // 改行分も履歴に積む
           saveHistory();
           save();
           updateCharCount();
           transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
         }
-      }, 2000);
+      }, 2000); // 2秒の沈黙
     }
 
+    // 音声認識の初期化
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SR) {
       recognition = new SR();
@@ -367,17 +374,20 @@
       recognition.onresult = (e) => {
         let final = '';
         for (let i = e.resultIndex; i < e.results.length; ++i) {
-          if (e.results[i].isFinal) { final += e.results[i][0].transcript; }
+          if (e.results[i].isFinal) {
+            final += e.results[i][0].transcript;
+          }
         }
         if (final) {
           const processed = final.replace(/改行/g, '\n');
           transcriptDiv.innerText += processed;
-          history.push(processed); 
+          history.push(processed); // 履歴に追加
           saveHistory();
+
           save();
           updateCharCount();
           transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
-          resetSilenceTimer();
+          resetSilenceTimer(); // 入力があったのでタイマーリセット
         }
       };
 
@@ -390,13 +400,6 @@
       };
 
       recognition.onend = () => {
-        if (isSaving) {
-          isRecording = false;
-          recordBtn.classList.remove('recording');
-          statusText.textContent = 'Ready';
-          document.body.classList.remove('recording');
-          return;
-        }
         if (isRecording) {
           try { recognition.start(); } catch (err) { console.error(err); }
         } else {
@@ -408,9 +411,9 @@
       };
 
       recognition.onerror = (e) => {
-        if (isSaving) return;
+        console.error('Speech recognition error:', e.error);
         if (e.error === 'not-allowed') {
-          toast('マイク権限が必要です');
+          alert('マイクの使用が許可されていません');
           isRecording = false;
         }
       };
@@ -421,14 +424,20 @@
         isRecording = false;
         recognition.stop();
       } else {
-        if (recognition) { recognition.start(); } else { alert('音声認識非対応'); }
+        if (recognition) {
+          recognition.start();
+        } else {
+          alert('このブラウザは音声認識に対応していません');
+        }
       }
     };
 
+    // 一歩戻るボタン (多段階UNDO対応 & 履歴永続化)
     undoBtn.onclick = () => {
       if (history.length > 0) {
         const lastInput = history.pop();
         const currentText = transcriptDiv.innerText;
+
         if (currentText.endsWith(lastInput)) {
           transcriptDiv.innerText = currentText.slice(0, -lastInput.length);
           save();
@@ -436,10 +445,13 @@
           updateCharCount();
           toast('取り消しました');
         } else {
+          // テキストエリアを手動編集した場合などで文末が一致しない場合
+          // 整合性を保つため履歴を破棄していくか、警告を出す。
+          // ここではユーザーが混乱しないよう、文末が一致しない場合は履歴を一つスキップして次を探す
           undoBtn.onclick();
         }
       } else {
-        toast('履歴なし');
+        toast('戻せる履歴がありません');
       }
     };
 
@@ -454,17 +466,10 @@
       setTimeout(() => t.style.opacity = 0, 1500);
     }
 
-    // 保存ボタンのロジック：エラーの原因となるピッカーを排除
+    // 保存ボタン (File System Access API 対応)
     document.getElementById('save-btn').onclick = async () => {
       const text = transcriptDiv.innerText;
-      if (!text || text.trim() === "") return toast('内容がありません');
-
-      isSaving = true;
-      if (isRecording) {
-        isRecording = false;
-        if (recognition) recognition.stop();
-        toast('保存のため一時停止...');
-      }
+      if (!text || text.trim() === "") return toast('保存する内容がありません');
 
       const now = new Date();
       const timestamp = now.getFullYear() +
@@ -472,40 +477,59 @@
         now.getDate().toString().padStart(2, '0') + "_" +
         now.getHours().toString().padStart(2, '0') +
         now.getMinutes().toString().padStart(2, '0');
-      
-      const defaultFilename = `VoiceDraft_Lite_${timestamp}.md`;
 
-      setTimeout(() => {
-        // ★ここを修正：システムピッカーを使わず、直接ダウンロードさせる
+      const defaultFilename = `VoiceDraft_${timestamp}.md`;
+
+      // File System Access API が使えるかチェック
+      if ('showSaveFilePicker' in window) {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: defaultFilename,
+            types: [{
+              description: 'Markdown File',
+              accept: { 'text/markdown': ['.md'] },
+            }],
+          });
+          const writable = await handle.createWritable();
+          await writable.write(text);
+          await writable.close();
+          toast('保存完了');
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            console.error(err);
+            toast('保存に失敗しました');
+          }
+        }
+      } else {
+        // フォールバック: 従来のダウンロード方式
         const blob = new Blob([text], { type: 'text/markdown' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = defaultFilename;
         a.click();
-        
-        setTimeout(() => { URL.revokeObjectURL(url); }, 5000);
-        toast('ダウンロードフォルダに保存');
-        
-        isSaving = false;
-      }, 500);
+        URL.revokeObjectURL(url);
+        toast('ダウンロードフォルダに保存しました');
+      }
     };
 
+    // コピーボタン
     document.getElementById('copy-btn').onclick = () => {
       const text = transcriptDiv.innerText;
-      if (!text) return toast('内容なし');
+      if (!text) return toast('コピーする内容がありません');
       navigator.clipboard.writeText(text).then(() => {
-        toast('コピー完了');
+        toast('クリップボードにコピーしました');
       });
     };
 
+    // 消去ボタン
     document.getElementById('clear-btn').onclick = () => {
-      if (confirm('全消去しますか？')) {
+      if (confirm('すべての内容を消去しますか？')) {
         transcriptDiv.innerText = '';
         history = [];
         save();
         updateCharCount();
-        toast('消去完了');
+        toast('消去しました');
       }
     };
 
