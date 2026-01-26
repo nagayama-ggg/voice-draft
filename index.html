@@ -5,13 +5,14 @@
   <meta charset="UTF-8">
   <meta name="viewport"
     content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>Voice Draft Pro - シンプル保存版</title>
+  <title>Voice Draft Pro - ダークモード & 自動改行</title>
   <style>
     :root {
       --bg: #000000;
       --surface: #121212;
       --card: #1c1c1e;
       --accent: #0a84ff;
+      /* インクブルー系のアクセント */
       --danger: #ff453a;
       --success: #32d74b;
       --text: #ffffff;
@@ -189,13 +190,13 @@
     }
 
     .btn-bar {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
+      display: flex;
       width: 100%;
       gap: 12px;
     }
 
     .btn {
+      flex: 1;
       background: var(--surface);
       border: 1px solid var(--border);
       color: white;
@@ -216,9 +217,8 @@
       transform: translateY(2px);
     }
 
-    .btn.success-flash {
-      background: var(--success) !important;
-      color: var(--bg) !important;
+    .btn i {
+      font-size: 1.2rem;
     }
 
     #char-count {
@@ -236,7 +236,7 @@
 
     #toast {
       position: fixed;
-      bottom: 200px;
+      bottom: 120px;
       left: 50%;
       transform: translateX(-50%);
       background: var(--accent);
@@ -258,8 +258,6 @@
   <header>
     <div id="current-clock">00:00</div>
     <div id="current-date">----/--/--</div>
-    <div id="current-filename" style="font-size: 0.7rem; color: var(--text-dim); margin-top: 4px;">Filename: Loading...
-    </div>
   </header>
 
   <div class="main">
@@ -277,75 +275,45 @@
       <div class="main-action">
         <button id="undo-btn" title="一歩戻る">↩️</button>
         <button id="record-btn">🎙️</button>
-        <button id="paste-btn" class="btn"
-          style="width: 50px; height: 50px; border-radius: 50%; padding: 0;"><span>📋</span><span
-            style="font-size: 0.6rem;">Paste</span></button>
+        <div style="width: 50px;"></div> <!-- レイアウト調整用 -->
       </div>
 
-      <div class="btn-bar" style="grid-template-columns: 1fr 1fr; gap: 8px;">
-        <button class="btn" id="save-a-btn"
-          style="background: var(--accent); border-color: var(--accent); font-size: 0.8rem;">
-          <span>🚀 A</span><span>Base64</span>
-        </button>
-        <button class="btn" id="save-b-btn" style="background: var(--surface); font-size: 0.8rem;">
-          <span>📝 B</span><span>Markdown</span>
-        </button>
-        <button class="btn" id="save-c-btn" style="background: var(--surface); font-size: 0.8rem;">
-          <span>📄 C</span><span>Legacy</span>
-        </button>
+      <div class="btn-bar">
+        <button class="btn" id="save-btn"><span>💾</span><span>保存</span></button>
         <button class="btn" id="copy-btn"><span>📋</span><span>コピー</span></button>
-        <button class="btn" id="clear-btn"
-          style="color: var(--danger); grid-column: span 2;"><span>🗑️</span><span>全消去</span></button>
+        <button class="btn" id="clear-btn" style="color: var(--danger)"><span>🗑️</span><span>消去</span></button>
       </div>
     </div>
   </div>
 
   <div id="toast"></div>
 
-  <!-- App Version Footer -->
-  <div style="text-align: center; padding: 10px; font-size: 0.6rem; color: var(--text-dim); opacity: 0.5;">
-    App Version: Fix-08 (Test)
-  </div>
-
   <script>
     const transcriptDiv = document.getElementById('transcript');
     const recordBtn = document.getElementById('record-btn');
     const undoBtn = document.getElementById('undo-btn');
-    const pasteBtn = document.getElementById('paste-btn');
     const statusText = document.getElementById('status-text');
     const charCountArea = document.getElementById('char-count');
-    const filenameDisplay = document.getElementById('current-filename');
 
     let recognition = null;
     let isRecording = false;
     let silenceTimer = null;
-    let history = [];
-    let versionCount = 1;
+    let history = []; // 確定文の履歴スタック
 
-    // ヘルパー: 日時文字列取得 (YYYYMMDD_HHMM)
-    function getDateTimeString() {
-      const now = new Date();
-      const Y = now.getFullYear();
-      const M = String(now.getMonth() + 1).padStart(2, '0');
-      const D = String(now.getDate()).padStart(2, '0');
-      const h = String(now.getHours()).padStart(2, '0');
-      const m = String(now.getMinutes()).padStart(2, '0');
-      return `${Y}${M}${D}_${h}${m}`;
-    }
-
-    function generateFilename() {
-      const dt = getDateTimeString();
-      return `VoiceDraft_${dt}_v${versionCount}.md`;
-    }
-
-    function updateFilenameDisplay() {
-      const currentFullFilename = generateFilename();
-      filenameDisplay.textContent = `Filename: ${currentFullFilename}`;
-      return currentFullFilename;
-    }
-
+    // 履歴の保存
     function saveHistory() {
       localStorage.setItem('vd_history', JSON.stringify(history));
+    }
+
+    // 履歴の復元
+    const savedHistory = localStorage.getItem('vd_history');
+    if (savedHistory) {
+      try {
+        history = JSON.parse(savedHistory);
+      } catch (e) {
+        console.error('Failed to parse history', e);
+        history = [];
+      }
     }
 
     function updateCharCount() {
@@ -361,92 +329,41 @@
       document.getElementById('current-date').textContent =
         now.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' });
     }
+    setInterval(tick, 1000); tick();
 
-    // 従来のダウンロード方式（フォールバック用：遅延付きで空ファイル防止）
-    function triggerDownload(content, filename) {
-      // 文字列をバイナリ(Uint8Array)に変換
-      const encoder = new TextEncoder();
-      const data = encoder.encode(content);
-
-      // バイナリストリームとして扱う（.txtの自動付与を回避）
-      const blob = new Blob([data], { type: 'application/octet-stream' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-
-      // Android等での空ファイル対策: 十分な遅延を入れてから revoke する
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 5000);
+    // 復元
+    const saved = localStorage.getItem('vd_draft');
+    if (saved) {
+      transcriptDiv.innerText = saved;
+      updateCharCount();
     }
 
-    // ★保存処理 (毎回必ず新規ダイアログを開く)
-    async function performSave(content, suggestedFilename) {
-      if (!content) return false;
+    // 自動改行アシスト用
+    function resetSilenceTimer() {
+      clearTimeout(silenceTimer);
+      if (!isRecording) return;
 
-      // 保存前の確定フィードバック
-      toast(`保存準備中: ${content.length}文字`);
-      console.log(`Saving ${content.length} characters...`);
-
-      let success = false;
-      // File System Access API に対応しているかチェック
-      if ('showSaveFilePicker' in window) {
-        try {
-          // 毎回新規でピッカーを開く
-          const fileHandle = await window.showSaveFilePicker({
-            suggestedName: suggestedFilename,
-            types: [{
-              description: 'Markdown File',
-              accept: { 'application/octet-stream': ['.md'] },
-            }],
-          });
-
-          const writable = await fileHandle.createWritable();
-          // バイナリに変換して書き込むことで0バイト問題を回避
-          const encoder = new TextEncoder();
-          const binaryData = encoder.encode(content);
-          await writable.write(binaryData);
-          await writable.close();
-          success = true;
-        } catch (err) {
-          if (err.name === 'AbortError') {
-            success = false;
-          } else {
-            console.error('Save Error:', err);
-            triggerDownload(content, suggestedFilename);
-            success = true;
+      silenceTimer = setTimeout(() => {
+        const text = transcriptDiv.innerText.trim();
+        if (text && !text.endsWith('\n')) {
+          let added = '';
+          // 文末が句点でない場合は追加し、改行を入れる
+          let lastChar = text.slice(-1);
+          if (!['。', '！', '？', '!', '?'].includes(lastChar)) {
+            added += '。';
           }
+          added += '\n';
+          transcriptDiv.innerText += added;
+          history.push(added); // 改行分も履歴に積む
+          saveHistory();
+          save();
+          updateCharCount();
+          transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
         }
-      } else {
-        triggerDownload(content, suggestedFilename);
-        success = true;
-      }
-
-      // ★保存後のフォローアップ通知 (自動再開はせず、ユーザーに促す)
-      if (success) {
-        toast("保存しました。マイクを押して再開");
-      }
-
-      return success;
+      }, 2000); // 2秒の沈黙
     }
 
-    function toast(m) {
-      const t = document.getElementById('toast');
-      t.textContent = m;
-      t.style.opacity = 1;
-      setTimeout(() => t.style.opacity = 0, 1500);
-    }
-
-    function flashButton(btn) {
-      btn.classList.add('success-flash');
-      setTimeout(() => btn.classList.remove('success-flash'), 500);
-    }
-
-    // 音声認識の設定
+    // 音声認識の初期化
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SR) {
       recognition = new SR();
@@ -457,15 +374,20 @@
       recognition.onresult = (e) => {
         let final = '';
         for (let i = e.resultIndex; i < e.results.length; ++i) {
-          if (e.results[i].isFinal) final += e.results[i][0].transcript;
+          if (e.results[i].isFinal) {
+            final += e.results[i][0].transcript;
+          }
         }
         if (final) {
           const processed = final.replace(/改行/g, '\n');
           transcriptDiv.innerText += processed;
-          history.push(processed);
+          history.push(processed); // 履歴に追加
           saveHistory();
+
+          save();
           updateCharCount();
           transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
+          resetSilenceTimer(); // 入力があったのでタイマーリセット
         }
       };
 
@@ -473,26 +395,27 @@
         isRecording = true;
         recordBtn.classList.add('recording');
         statusText.textContent = 'Recording...';
+        document.body.classList.add('recording');
+        resetSilenceTimer();
       };
 
       recognition.onend = () => {
-        // ユーザーが手動で停止（isRecording = false）していない場合は、自動再開を試みる
         if (isRecording) {
-          try {
-            recognition.start();
-            console.log("SpeechRecognition automatically restarted.");
-          } catch (err) {
-            console.error("Recognition restart error:", err);
-          }
+          try { recognition.start(); } catch (err) { console.error(err); }
         } else {
           recordBtn.classList.remove('recording');
           statusText.textContent = 'Ready';
+          document.body.classList.remove('recording');
+          clearTimeout(silenceTimer);
         }
       };
 
       recognition.onerror = (e) => {
         console.error('Speech recognition error:', e.error);
-        if (e.error === 'not-allowed') toast('マイクの使用を許可してください');
+        if (e.error === 'not-allowed') {
+          alert('マイクの使用が許可されていません');
+          isRecording = false;
+        }
       };
     }
 
@@ -500,156 +423,120 @@
       if (isRecording) {
         isRecording = false;
         recognition.stop();
-      } else if (recognition) {
-        recognition.start();
       } else {
-        toast('音声認識非対応ブラウザです');
+        if (recognition) {
+          recognition.start();
+        } else {
+          alert('このブラウザは音声認識に対応していません');
+        }
       }
     };
 
+    // 一歩戻るボタン (多段階UNDO対応 & 履歴永続化)
     undoBtn.onclick = () => {
       if (history.length > 0) {
         const lastInput = history.pop();
-        if (transcriptDiv.innerText.endsWith(lastInput)) {
-          transcriptDiv.innerText = transcriptDiv.innerText.slice(0, -lastInput.length);
+        const currentText = transcriptDiv.innerText;
+
+        if (currentText.endsWith(lastInput)) {
+          transcriptDiv.innerText = currentText.slice(0, -lastInput.length);
+          save();
           saveHistory();
           updateCharCount();
-          toast('戻しました');
+          toast('取り消しました');
         } else {
+          // テキストエリアを手動編集した場合などで文末が一致しない場合
+          // 整合性を保つため履歴を破棄していくか、警告を出す。
+          // ここではユーザーが混乱しないよう、文末が一致しない場合は履歴を一つスキップして次を探す
           undoBtn.onclick();
         }
       } else {
-        toast('履歴がありません');
+        toast('戻せる履歴がありません');
       }
     };
 
-    pasteBtn.onclick = async () => {
-      try {
-        const text = await navigator.clipboard.readText();
-        if (text) {
-          const processedText = `\n${text}\n`;
-          transcriptDiv.innerText += processedText;
-          history.push(processedText);
-          saveHistory();
-          updateCharCount();
-          transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
-          toast('追記ペースト完了');
-        }
-      } catch (err) { toast('失敗'); }
-    };
-
-    // 共通：保存開始時の処理（マイク停止）
-    function prepareForSave(text) {
-      if (isRecording) {
-        isRecording = false;
-        recognition.stop();
-        recordBtn.classList.remove('recording');
-        statusText.textContent = 'Ready';
-      }
-      toast(`保存準備中: ${text.length}文字`);
-      console.log(`Starting save process for ${text.length} chars...`);
+    function save() {
+      localStorage.setItem('vd_draft', transcriptDiv.innerText);
     }
 
-    // Save A: Base64 (本命：Blob回避)
-    document.getElementById('save-a-btn').onclick = () => {
-      let text = transcriptDiv.innerText;
-      if (!text || text.trim() === "") text = " ";
-      prepareForSave(text);
+    function toast(m) {
+      const t = document.getElementById('toast');
+      t.textContent = m;
+      t.style.opacity = 1;
+      setTimeout(() => t.style.opacity = 0, 1500);
+    }
 
-      const filename = `TestA_v${versionCount}.md`;
-      try {
-        // Base64エンコード (UTF-8を考慮)
-        const base64Data = btoa(unescape(encodeURIComponent(text)));
-        const dataUri = `data:text/markdown;base64,${base64Data}`;
+    // 保存ボタン (File System Access API 対応)
+    document.getElementById('save-btn').onclick = async () => {
+      const text = transcriptDiv.innerText;
+      if (!text || text.trim() === "") return toast('保存する内容がありません');
 
+      const now = new Date();
+      const timestamp = now.getFullYear() +
+        (now.getMonth() + 1).toString().padStart(2, '0') +
+        now.getDate().toString().padStart(2, '0') + "_" +
+        now.getHours().toString().padStart(2, '0') +
+        now.getMinutes().toString().padStart(2, '0');
+
+      const defaultFilename = `VoiceDraft_${timestamp}.md`;
+
+      // File System Access API が使えるかチェック
+      if ('showSaveFilePicker' in window) {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: defaultFilename,
+            types: [{
+              description: 'Markdown File',
+              accept: { 'text/markdown': ['.md'] },
+            }],
+          });
+          const writable = await handle.createWritable();
+          await writable.write(text);
+          await writable.close();
+          toast('保存完了');
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            console.error(err);
+            toast('保存に失敗しました');
+          }
+        }
+      } else {
+        // フォールバック: 従来のダウンロード方式
+        const blob = new Blob([text], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = dataUri;
-        a.download = filename;
-        document.body.appendChild(a);
+        a.href = url;
+        a.download = defaultFilename;
         a.click();
-
-        setTimeout(() => {
-          document.body.removeChild(a);
-          versionCount++;
-          updateFilenameDisplay();
-          toast('Save A (Base64) 実行');
-        }, 1000);
-      } catch (err) {
-        alert("Save A Error: " + err.message);
+        URL.revokeObjectURL(url);
+        toast('ダウンロードフォルダに保存しました');
       }
     };
 
-    // Save B: Markdown Blob (正攻法)
-    document.getElementById('save-b-btn').onclick = () => {
-      let text = transcriptDiv.innerText;
-      if (!text || text.trim() === "") text = " ";
-      prepareForSave(text);
-
-      const filename = `TestB_v${versionCount}.md`;
-      const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        versionCount++;
-        updateFilenameDisplay();
-        toast('Save B (Markdown) 実行');
-      }, 5000);
-    };
-
-    // Save C: Legacy Text Blob (保険)
-    document.getElementById('save-c-btn').onclick = () => {
-      let text = transcriptDiv.innerText;
-      if (!text || text.trim() === "") text = " ";
-      prepareForSave(text);
-
-      const filename = `TestC_v${versionCount}.md`;
-      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        versionCount++;
-        updateFilenameDisplay();
-        toast('Save C (Legacy) 実行');
-      }, 5000);
-    };
-
+    // コピーボタン
     document.getElementById('copy-btn').onclick = () => {
       const text = transcriptDiv.innerText;
-      if (!text) return toast('内容がありません');
-      navigator.clipboard.writeText(text).then(() => toast('コピー完了'));
+      if (!text) return toast('コピーする内容がありません');
+      navigator.clipboard.writeText(text).then(() => {
+        toast('クリップボードにコピーしました');
+      });
     };
 
+    // 消去ボタン
     document.getElementById('clear-btn').onclick = () => {
-      transcriptDiv.innerText = '';
-      history = [];
-      saveHistory();
-      updateCharCount();
-      toast('クリアしました');
+      if (confirm('すべての内容を消去しますか？')) {
+        transcriptDiv.innerText = '';
+        history = [];
+        save();
+        updateCharCount();
+        toast('消去しました');
+      }
     };
 
     transcriptDiv.oninput = () => {
+      save();
       updateCharCount();
     };
-
-    // 初期起動
-    setInterval(tick, 1000); tick();
-    updateFilenameDisplay();
-    transcriptDiv.innerText = '';
-    updateCharCount();
   </script>
 </body>
 
