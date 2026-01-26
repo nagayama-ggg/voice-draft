@@ -43,7 +43,7 @@
       background: linear-gradient(to bottom, var(--surface), var(--bg));
     }
 
-    /* アプリ名表示用のスタイル */
+    /* アプリ名表示用 */
     #app-title {
       font-size: 1rem;
       font-weight: 700;
@@ -298,19 +298,21 @@
 
     let recognition = null;
     let isRecording = false;
-    let isSaving = false;
     let silenceTimer = null;
     let history = [];
 
+    // 履歴の保存
     function saveHistory() {
       localStorage.setItem('vd_history', JSON.stringify(history));
     }
 
+    // 履歴の復元
     const savedHistory = localStorage.getItem('vd_history');
     if (savedHistory) {
       try {
         history = JSON.parse(savedHistory);
       } catch (e) {
+        console.error('Failed to parse history', e);
         history = [];
       }
     }
@@ -330,32 +332,38 @@
     }
     setInterval(tick, 1000); tick();
 
+    // 復元
     const saved = localStorage.getItem('vd_draft');
     if (saved) {
       transcriptDiv.innerText = saved;
       updateCharCount();
     }
 
+    // 自動改行アシスト用
     function resetSilenceTimer() {
       clearTimeout(silenceTimer);
       if (!isRecording) return;
+
       silenceTimer = setTimeout(() => {
         const text = transcriptDiv.innerText.trim();
         if (text && !text.endsWith('\n')) {
           let added = '';
           let lastChar = text.slice(-1);
-          if (!['。', '！', '？', '!', '?'].includes(lastChar)) { added += '。'; }
+          if (!['。', '！', '？', '!', '?'].includes(lastChar)) {
+            added += '。';
+          }
           added += '\n';
           transcriptDiv.innerText += added;
-          history.push(added);
+          history.push(added); 
           saveHistory();
           save();
           updateCharCount();
           transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
         }
-      }, 2000);
+      }, 2000); // 2秒の沈黙
     }
 
+    // 音声認識の初期化
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SR) {
       recognition = new SR();
@@ -366,17 +374,20 @@
       recognition.onresult = (e) => {
         let final = '';
         for (let i = e.resultIndex; i < e.results.length; ++i) {
-          if (e.results[i].isFinal) { final += e.results[i][0].transcript; }
+          if (e.results[i].isFinal) {
+            final += e.results[i][0].transcript;
+          }
         }
         if (final) {
           const processed = final.replace(/改行/g, '\n');
           transcriptDiv.innerText += processed;
-          history.push(processed);
+          history.push(processed); 
           saveHistory();
+
           save();
           updateCharCount();
           transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
-          resetSilenceTimer();
+          resetSilenceTimer(); 
         }
       };
 
@@ -389,13 +400,6 @@
       };
 
       recognition.onend = () => {
-        if (isSaving) {
-          isRecording = false;
-          recordBtn.classList.remove('recording');
-          statusText.textContent = 'Ready';
-          document.body.classList.remove('recording');
-          return;
-        }
         if (isRecording) {
           try { recognition.start(); } catch (err) { console.error(err); }
         } else {
@@ -408,9 +412,8 @@
 
       recognition.onerror = (e) => {
         console.error('Speech recognition error:', e.error);
-        if (isSaving) return;
         if (e.error === 'not-allowed') {
-          toast('マイク権限が必要です');
+          alert('マイクの使用が許可されていません');
           isRecording = false;
         }
       };
@@ -421,14 +424,20 @@
         isRecording = false;
         recognition.stop();
       } else {
-        if (recognition) { recognition.start(); } else { alert('音声認識非対応'); }
+        if (recognition) {
+          recognition.start();
+        } else {
+          alert('このブラウザは音声認識に対応していません');
+        }
       }
     };
 
+    // 一歩戻るボタン
     undoBtn.onclick = () => {
       if (history.length > 0) {
         const lastInput = history.pop();
         const currentText = transcriptDiv.innerText;
+
         if (currentText.endsWith(lastInput)) {
           transcriptDiv.innerText = currentText.slice(0, -lastInput.length);
           save();
@@ -439,7 +448,7 @@
           undoBtn.onclick();
         }
       } else {
-        toast('履歴なし');
+        toast('戻せる履歴がありません');
       }
     };
 
@@ -454,18 +463,10 @@
       setTimeout(() => t.style.opacity = 0, 1500);
     }
 
-    // ★修正：0バイト問題を回避するため、強制的にダウンロード方式を使用
+    // 保存ボタン (Logicは正常版と全く同じ text渡し)
     document.getElementById('save-btn').onclick = async () => {
       const text = transcriptDiv.innerText;
-      if (!text || text.trim() === "") return toast('内容がありません');
-
-      isSaving = true;
-      // 保存前にマイク停止
-      if (isRecording) {
-        isRecording = false;
-        if (recognition) recognition.stop();
-        toast('保存のため一時停止...');
-      }
+      if (!text || text.trim() === "") return toast('保存する内容がありません');
 
       const now = new Date();
       const timestamp = now.getFullYear() +
@@ -473,49 +474,61 @@
         now.getDate().toString().padStart(2, '0') + "_" +
         now.getHours().toString().padStart(2, '0') +
         now.getMinutes().toString().padStart(2, '0');
-      
+
+      // ファイル名のみ Lite を付与
       const defaultFilename = `VoiceDraft_Lite_${timestamp}.md`;
 
-      setTimeout(() => {
-        // ここを修正：File System Access API (Save Picker) は使わず、
-        // 常にfallbackSave（ダウンロード）を使うことで0バイト回避
-        fallbackSave(text, defaultFilename);
-        
-        isSaving = false;
-      }, 500);
+      // File System Access API が使えるかチェック
+      if ('showSaveFilePicker' in window) {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: defaultFilename,
+            types: [{
+              description: 'Markdown File',
+              accept: { 'text/markdown': ['.md'] },
+            }],
+          });
+          const writable = await handle.createWritable();
+          // ★ここが正常版と同じ（Blobではない）
+          await writable.write(text);
+          await writable.close();
+          toast('保存完了');
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            console.error(err);
+            toast('保存に失敗しました');
+          }
+        }
+      } else {
+        // フォールバック: 従来のダウンロード方式
+        const blob = new Blob([text], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = defaultFilename;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast('ダウンロードフォルダに保存しました');
+      }
     };
 
-    function fallbackSave(text, filename) {
-      const blob = new Blob([text], { type: 'text/markdown' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.click();
-      
-      // ★重要：URLの無効化を遅らせる（即時無効化だと0バイトになる端末があるため）
-      setTimeout(() => {
-        URL.revokeObjectURL(url);
-      }, 5000);
-      
-      toast('ダウンロードフォルダに保存');
-    }
-
+    // コピーボタン
     document.getElementById('copy-btn').onclick = () => {
       const text = transcriptDiv.innerText;
-      if (!text) return toast('内容なし');
+      if (!text) return toast('コピーする内容がありません');
       navigator.clipboard.writeText(text).then(() => {
-        toast('コピー完了');
+        toast('クリップボードにコピーしました');
       });
     };
 
+    // 消去ボタン
     document.getElementById('clear-btn').onclick = () => {
-      if (confirm('全消去しますか？')) {
+      if (confirm('すべての内容を消去しますか？')) {
         transcriptDiv.innerText = '';
         history = [];
         save();
         updateCharCount();
-        toast('消去完了');
+        toast('消去しました');
       }
     };
 
