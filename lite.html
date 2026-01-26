@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport"
     content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>Voice Draft Pro - 安定保存版</title>
+  <title>Voice Draft Lite</title>
   <style>
     :root {
       --bg: #000000;
@@ -41,6 +41,15 @@
       text-align: center;
       flex-shrink: 0;
       background: linear-gradient(to bottom, var(--surface), var(--bg));
+    }
+
+    /* アプリ名表示用のスタイル */
+    #app-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 4px;
+      opacity: 0.9;
     }
 
     #current-clock {
@@ -90,17 +99,9 @@
     }
 
     @keyframes pulse {
-      0% {
-        opacity: 1;
-      }
-
-      50% {
-        opacity: 0.4;
-      }
-
-      100% {
-        opacity: 1;
-      }
+      0% { opacity: 1; }
+      50% { opacity: 0.4; }
+      100% { opacity: 1; }
     }
 
     .editor {
@@ -255,6 +256,7 @@
 
 <body>
   <header>
+    <div id="app-title">Voice Draft Lite</div>
     <div id="current-clock">00:00</div>
     <div id="current-date">----/--/--</div>
   </header>
@@ -296,16 +298,14 @@
 
     let recognition = null;
     let isRecording = false;
-    let isSaving = false; // 保存中かどうかのフラグ
+    let isSaving = false;
     let silenceTimer = null;
     let history = [];
 
-    // 履歴の保存
     function saveHistory() {
       localStorage.setItem('vd_history', JSON.stringify(history));
     }
 
-    // 履歴の復元
     const savedHistory = localStorage.getItem('vd_history');
     if (savedHistory) {
       try {
@@ -339,15 +339,12 @@
     function resetSilenceTimer() {
       clearTimeout(silenceTimer);
       if (!isRecording) return;
-
       silenceTimer = setTimeout(() => {
         const text = transcriptDiv.innerText.trim();
         if (text && !text.endsWith('\n')) {
           let added = '';
           let lastChar = text.slice(-1);
-          if (!['。', '！', '？', '!', '?'].includes(lastChar)) {
-            added += '。';
-          }
+          if (!['。', '！', '？', '!', '?'].includes(lastChar)) { added += '。'; }
           added += '\n';
           transcriptDiv.innerText += added;
           history.push(added);
@@ -359,7 +356,6 @@
       }, 2000);
     }
 
-    // 音声認識の初期化
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SR) {
       recognition = new SR();
@@ -370,9 +366,7 @@
       recognition.onresult = (e) => {
         let final = '';
         for (let i = e.resultIndex; i < e.results.length; ++i) {
-          if (e.results[i].isFinal) {
-            final += e.results[i][0].transcript;
-          }
+          if (e.results[i].isFinal) { final += e.results[i][0].transcript; }
         }
         if (final) {
           const processed = final.replace(/改行/g, '\n');
@@ -395,7 +389,6 @@
       };
 
       recognition.onend = () => {
-        // 保存中なら自動再開しない（エラー防止）
         if (isSaving) {
           isRecording = false;
           recordBtn.classList.remove('recording');
@@ -403,7 +396,6 @@
           document.body.classList.remove('recording');
           return;
         }
-
         if (isRecording) {
           try { recognition.start(); } catch (err) { console.error(err); }
         } else {
@@ -416,11 +408,8 @@
 
       recognition.onerror = (e) => {
         console.error('Speech recognition error:', e.error);
-        // 保存中はエラーを無視する
         if (isSaving) return;
-
         if (e.error === 'not-allowed') {
-          // アラートを消し、静かに停止する
           toast('マイク権限が必要です');
           isRecording = false;
         }
@@ -432,11 +421,7 @@
         isRecording = false;
         recognition.stop();
       } else {
-        if (recognition) {
-          recognition.start();
-        } else {
-          alert('音声認識非対応');
-        }
+        if (recognition) { recognition.start(); } else { alert('音声認識非対応'); }
       }
     };
 
@@ -469,54 +454,33 @@
       setTimeout(() => t.style.opacity = 0, 1500);
     }
 
-    // 保存ボタン修正版
+    // ★修正：0バイト問題を回避するため、強制的にダウンロード方式を使用
     document.getElementById('save-btn').onclick = async () => {
       const text = transcriptDiv.innerText;
       if (!text || text.trim() === "") return toast('内容がありません');
 
-      // ★重要：保存前にマイクを安全に停止する
       isSaving = true;
+      // 保存前にマイク停止
       if (isRecording) {
         isRecording = false;
         if (recognition) recognition.stop();
         toast('保存のため一時停止...');
       }
 
-      // ファイル名生成
       const now = new Date();
       const timestamp = now.getFullYear() +
         (now.getMonth() + 1).toString().padStart(2, '0') +
         now.getDate().toString().padStart(2, '0') + "_" +
         now.getHours().toString().padStart(2, '0') +
         now.getMinutes().toString().padStart(2, '0');
-      const defaultFilename = `VoiceDraft_${timestamp}.md`;
+      
+      const defaultFilename = `VoiceDraft_Lite_${timestamp}.md`;
 
-      // 少し待ってから保存処理（マイク停止を待つ）
-      setTimeout(async () => {
-        if ('showSaveFilePicker' in window) {
-          try {
-            const handle = await window.showSaveFilePicker({
-              suggestedName: defaultFilename,
-              types: [{
-                description: 'Markdown File',
-                accept: { 'text/markdown': ['.md'] },
-              }],
-            });
-            const writable = await handle.createWritable();
-            await writable.write(text);
-            await writable.close();
-            toast('保存完了');
-          } catch (err) {
-            if (err.name !== 'AbortError') {
-              console.error(err);
-              fallbackSave(text, defaultFilename);
-            }
-          }
-        } else {
-          fallbackSave(text, defaultFilename);
-        }
+      setTimeout(() => {
+        // ここを修正：File System Access API (Save Picker) は使わず、
+        // 常にfallbackSave（ダウンロード）を使うことで0バイト回避
+        fallbackSave(text, defaultFilename);
         
-        // 保存処理終了（フラグ解除）
         isSaving = false;
       }, 500);
     };
@@ -528,7 +492,12 @@
       a.href = url;
       a.download = filename;
       a.click();
-      URL.revokeObjectURL(url);
+      
+      // ★重要：URLの無効化を遅らせる（即時無効化だと0バイトになる端末があるため）
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 5000);
+      
       toast('ダウンロードフォルダに保存');
     }
 
