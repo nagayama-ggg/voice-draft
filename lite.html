@@ -454,12 +454,11 @@
       setTimeout(() => t.style.opacity = 0, 1500);
     }
 
-    // 保存ボタンのロジック
+    // 保存ボタンのロジック：エラーの原因となるピッカーを排除
     document.getElementById('save-btn').onclick = async () => {
       const text = transcriptDiv.innerText;
       if (!text || text.trim() === "") return toast('内容がありません');
 
-      // 保存前にマイクを停止
       isSaving = true;
       if (isRecording) {
         isRecording = false;
@@ -476,49 +475,21 @@
       
       const defaultFilename = `VoiceDraft_Lite_${timestamp}.md`;
 
-      setTimeout(async () => {
-        // ★修正点：保存先を選べる機能を復活 + 互換性向上設定
-        if ('showSaveFilePicker' in window) {
-          try {
-            const handle = await window.showSaveFilePicker({
-              suggestedName: defaultFilename,
-              types: [{
-                description: 'Text File',
-                // Androidとの相性を良くするため、text/plain として扱い、拡張子は .md にする
-                accept: { 'text/plain': ['.md'] },
-              }],
-            });
-            const writable = await handle.createWritable();
-            // 確実に書き込むため Blob (text/plain) を使用
-            const blob = new Blob([text], { type: 'text/plain' });
-            await writable.write(blob);
-            await writable.close();
-            toast('保存完了');
-          } catch (err) {
-            if (err.name !== 'AbortError') {
-              console.error(err);
-              // ピッカーで失敗した場合は、自動でダウンロード保存に切り替える
-              fallbackSave(text, defaultFilename);
-            }
-          }
-        } else {
-          fallbackSave(text, defaultFilename);
-        }
+      setTimeout(() => {
+        // ★ここを修正：システムピッカーを使わず、直接ダウンロードさせる
+        const blob = new Blob([text], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = defaultFilename;
+        a.click();
+        
+        setTimeout(() => { URL.revokeObjectURL(url); }, 5000);
+        toast('ダウンロードフォルダに保存');
         
         isSaving = false;
       }, 500);
     };
-
-    function fallbackSave(text, filename) {
-      const blob = new Blob([text], { type: 'text/plain' }); // ここも text/plain に統一
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.click();
-      setTimeout(() => { URL.revokeObjectURL(url); }, 5000);
-      toast('ダウンロードフォルダに保存');
-    }
 
     document.getElementById('copy-btn').onclick = () => {
       const text = transcriptDiv.innerText;
